@@ -1,9 +1,10 @@
-import {Button} from "@/components/ui/button"
+import {useTRPC} from "@/trpc/client"
 const Home=async()=> {
+  const trpc=useTRPC();
+  trpc.hello.query
   return (
     <div>
-      <Button>
-      </Button>
+
     </div>
   );
 }
