@@ -1,0 +1,17 @@
+# This is a config for E2B sandbox template.
+# You can use template ID (i1flyvmmw1pd39n6lu27) or template name (codegenie-test-2) to create a sandbox:
+
+# Python SDK
+# from e2b import Sandbox, AsyncSandbox
+# sandbox = Sandbox("codegenie-test-2") # Sync sandbox
+# sandbox = await AsyncSandbox.create("codegenie-test-2") # Async sandbox
+
+# JS SDK
+# import { Sandbox } from 'e2b'
+# const sandbox = await Sandbox.create('codegenie-test-2')
+
+team_id = "bf80777f-4f45-4d4c-bbfe-e86c2e200b07"
+start_cmd = "/compile_page.sh"
+dockerfile = "e2b.Dockerfile"
+template_name = "codegenie-test-2"
+template_id = "i1flyvmmw1pd39n6lu27"
