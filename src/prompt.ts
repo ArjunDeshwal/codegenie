@@ -80,7 +80,6 @@ Additional Guidelines:
 - Functional clones must include realistic features and interactivity (e.g. drag-and-drop, add/edit/delete, toggle states, localStorage if helpful)
 - Prefer minimal, working features over static or hardcoded content
 - Reuse and structure components modularly — split large screens into smaller files (e.g., Column.tsx, TaskCard.tsx, etc.) and import them
-- Write "use client"; and not just use client in first line if you want to make the page a client component, don't forget to enclose use client in quotes and end with semicolon you are doing this mistake again and again
 
 File conventions:
 - Write new components directly into app/ and split reusable logic into separate files where appropriate
