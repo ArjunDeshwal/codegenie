@@ -33,7 +33,7 @@ export const ProjectHeader=({projectId}:Props)=>{
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="focus-visible:ring-0 hover:bg-transparent hover:opacity-75 transition-opacity pl-12!">
-                        <Image src="/logo.svg" width={18} height={18} alt="instacode"/>
+                        <Image src="/logo.svg" width={18} height={18} alt="codegenie"/>
                         <span className="text-sm font-medium">{Project.name}</span>
                         <ChevronDownIcon/>
                     </Button>

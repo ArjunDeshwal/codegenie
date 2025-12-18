@@ -10,7 +10,6 @@ interface Props{
     projectId:string;
     activeFragment:Fragment|null;
     setActiveFragment:(fragment:Fragment|null)=>void;
-
 }
 export const MessagesContainer=({
     projectId,
