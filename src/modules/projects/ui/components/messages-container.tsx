@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
 import { Fragment } from "@/generated/prisma";
 import { useTRPC } from "@/trpc/client";
 import { MessageCard } from "./message-card";
@@ -18,9 +23,7 @@ const MessagesContainer = ({
   projectId,
   setActiveFragment,
 }: MessagesContainerProps) => {
-  const bottomRef = useRef<HTMLDivElement>(null);
   const lastAssistantMessageIdRef = useRef<string | null>(null);
-
   const trpc = useTRPC();
   const { data: messages } = useQuery(
     trpc.messages.getMany.queryOptions({ projectId }, { refetchInterval: 5000 })
@@ -30,27 +33,22 @@ const MessagesContainer = ({
     const lastAssistantMessage = messages?.findLast(
       (message) => message.role === "ASSISTANT"
     );
-
     if (
       lastAssistantMessage?.fragment &&
       lastAssistantMessage.id !== lastAssistantMessageIdRef.current
     ) {
-      setActiveFragment(lastAssistantMessage?.fragment);
+      setActiveFragment(lastAssistantMessage.fragment);
       lastAssistantMessageIdRef.current = lastAssistantMessage.id;
     }
   }, [messages, setActiveFragment]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView();
-  }, [messages?.length]);
-
-  const lastMessage = messages?.[messages?.length - 1];
+  const lastMessage = messages?.at(-1);
   const isLastMessageUser = lastMessage?.role === "USER";
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div className="pt-2 pr-1">
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <Conversation className="min-h-0">
+        <ConversationContent className="gap-6 px-4 py-6">
           {messages?.map((message) => (
             <MessageCard
               key={message.id}
@@ -63,15 +61,13 @@ const MessagesContainer = ({
               type={message.type}
             />
           ))}
-
           {isLastMessageUser && <MessageLoading />}
+        </ConversationContent>
+        <ConversationScrollButton className="bottom-2 size-8" />
+      </Conversation>
 
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      <div className="relative p-3 pt-1">
-        <div className="absolute -top-6 left-0 right-0 h-6 bg-gradient-to-b from-transparent to-background pointer-events-none" />
+      <div className="relative px-3 pb-3 pt-1">
+        <div className="pointer-events-none absolute -top-8 inset-x-0 h-8 bg-gradient-to-b from-transparent to-background" />
         <MessageForm projectId={projectId} />
       </div>
     </div>

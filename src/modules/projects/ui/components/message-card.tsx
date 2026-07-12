@@ -1,110 +1,14 @@
 import { format } from "date-fns";
-import { ChevronRightIcon, Code2Icon } from "lucide-react";
+import { ArrowUpRightIcon, Code2Icon } from "lucide-react";
 import Image from "next/image";
 
-import { Card } from "@/components/ui/card";
+import {
+  Message,
+  MessageContent,
+  MessageResponse,
+} from "@/components/ai-elements/message";
 import { Fragment, MessageRole, MessageType } from "@/generated/prisma";
 import { cn } from "@/lib/utils";
-
-interface UserMessageProps {
-  content: string;
-}
-
-const UserMessage = ({ content }: UserMessageProps) => {
-  return (
-    <div className="flex justify-end pb-4 pr-2 pl-10">
-      <Card className="rounded-lg bg-muted p-3 shadow-none border-none max-w-4/5 break-words">
-        {content}
-      </Card>
-    </div>
-  );
-};
-
-interface FragmentCardProps {
-  fragment: Fragment;
-  isActiveFragment: boolean;
-  onFragmentClick: (fragment: Fragment) => void;
-}
-
-const FragmentCard = ({
-  fragment,
-  isActiveFragment,
-  onFragmentClick,
-}: FragmentCardProps) => {
-  return (
-    <button
-      className={cn(
-        "flex items-start text-start gap-2 border rounded-lg bg-muted w-fit p-3 hover:bg-secondary transition-colors",
-        isActiveFragment &&
-          "bg-primary text-primary-foreground border-primary hover:bg-primary"
-      )}
-      onClick={() => onFragmentClick(fragment)}
-    >
-      <Code2Icon className="size-4 mt-0.5" />
-      <div className="flex flex-col flex-1">
-        <span className="text-sm font-medium line-clamp-1">
-          {fragment.title}
-        </span>
-        <span className="text-sm">Preview</span>
-      </div>
-      <div className="flex items-center justify-center mt-0.5">
-        <ChevronRightIcon className="size-4" />
-      </div>
-    </button>
-  );
-};
-
-interface AssistantMessageProps {
-  content: string;
-  fragment: Fragment | null;
-  createdAt: Date;
-  isActiveFragment: boolean;
-  onFragmentClick: (fragment: Fragment) => void;
-  type: MessageType;
-}
-
-const AssistantMessage = ({
-  content,
-  createdAt,
-  fragment,
-  isActiveFragment,
-  onFragmentClick,
-  type,
-}: AssistantMessageProps) => {
-  return (
-    <div
-      className={cn(
-        "flex flex-col group px-2 pb-4",
-        type === "ERROR" && "text-red-700 dark:text-red-500"
-      )}
-    >
-      <div className="flex items-center gap-2 pl-2 mb-2">
-        <Image
-          src="/logo.svg"
-          alt="lovable-clone"
-          height={18}
-          width={18}
-          className="shrink-0"
-        />
-        <span className="text-sm font-medium">Lovable Clone</span>
-        <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-          {format(createdAt, "HH:mm 'on' MMM dd, yyyy")}
-        </span>
-      </div>
-
-      <div className="pl-8.5 flex flex-col gap-y-4">
-        <span>{content}</span>
-        {fragment && type === "RESULT" && (
-          <FragmentCard
-            fragment={fragment}
-            isActiveFragment={isActiveFragment}
-            onFragmentClick={onFragmentClick}
-          />
-        )}
-      </div>
-    </div>
-  );
-};
 
 interface MessageCardProps {
   content: string;
@@ -116,6 +20,36 @@ interface MessageCardProps {
   type: MessageType;
 }
 
+const FragmentCard = ({
+  fragment,
+  isActiveFragment,
+  onFragmentClick,
+}: {
+  fragment: Fragment;
+  isActiveFragment: boolean;
+  onFragmentClick: (fragment: Fragment) => void;
+}) => (
+  <button
+    type="button"
+    onClick={() => onFragmentClick(fragment)}
+    className={cn(
+      "group/fragment mt-2 flex w-full items-center gap-3 rounded-lg border border-border bg-card px-3 py-3 text-left transition-colors hover:border-foreground/25",
+      isActiveFragment && "border-primary/40 bg-accent/45"
+    )}
+  >
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-primary">
+      <Code2Icon className="size-4" />
+    </span>
+    <span className="min-w-0 flex-1">
+      <span className="block truncate text-xs font-medium">{fragment.title}</span>
+      <span className="mt-0.5 block font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+        Generated build
+      </span>
+    </span>
+    <ArrowUpRightIcon className="size-3.5 text-muted-foreground transition-transform group-hover/fragment:-translate-y-0.5 group-hover/fragment:translate-x-0.5" />
+  </button>
+);
+
 const MessageCard = ({
   content,
   createdAt,
@@ -125,20 +59,40 @@ const MessageCard = ({
   role,
   type,
 }: MessageCardProps) => {
-  if (role === "ASSISTANT") {
+  if (role === "USER") {
     return (
-      <AssistantMessage
-        content={content}
-        fragment={fragment}
-        createdAt={createdAt}
-        isActiveFragment={isActiveFragment}
-        onFragmentClick={onFragmentClick}
-        type={type}
-      />
+      <Message from="user" className="max-w-[88%]">
+        <MessageContent className="rounded-xl bg-foreground px-4 py-3 text-background dark:bg-foreground dark:text-background">
+          <p className="whitespace-pre-wrap text-sm leading-6">{content}</p>
+        </MessageContent>
+      </Message>
     );
   }
 
-  return <UserMessage content={content} />;
+  return (
+    <Message
+      from="assistant"
+      className={cn("max-w-full", type === "ERROR" && "text-destructive")}
+    >
+      <div className="mb-1 flex items-center gap-2">
+        <Image src="/logo.svg" alt="CodeGenie" height={20} width={20} />
+        <span className="text-xs font-semibold">CodeGenie</span>
+        <span className="font-mono text-[9px] text-muted-foreground">
+          {format(createdAt, "HH:mm")}
+        </span>
+      </div>
+      <MessageContent className="w-full pl-7 text-sm leading-6">
+        <MessageResponse>{content}</MessageResponse>
+        {fragment && type === "RESULT" && (
+          <FragmentCard
+            fragment={fragment}
+            isActiveFragment={isActiveFragment}
+            onFragmentClick={onFragmentClick}
+          />
+        )}
+      </MessageContent>
+    </Message>
+  );
 };
 
 export { MessageCard };

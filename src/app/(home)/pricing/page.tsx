@@ -2,7 +2,6 @@
 
 import { PricingTable } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
-import Image from "next/image";
 
 import { useCurrentTheme } from "@/hooks/use-current-theme";
 
@@ -10,30 +9,33 @@ export default function PricingPage() {
   const currentTheme = useCurrentTheme();
 
   return (
-    <div className="flex flex-col max-w-3xl mx-auto w-full">
-      <section className="space-y-6 pt-[16vh] 2xl:pt-48">
-        <div className="flex flex-col items-center">
-          <Image
-            src="/logo.svg"
-            alt="lovable-clone"
-            height={50}
-            width={50}
-            className="hidden md:block"
-          />
-          <h1 className="text-xl md:text-3xl font-bold text-center">Pricing</h1>
-          <p className="text-muted-foreground text-center text-sm md:text-base">
-            Choose the plan that fits your needs
+    <div className="mx-auto w-full max-w-6xl pb-24 pt-32 sm:pt-40">
+      <div className="mb-12 grid gap-6 border-b border-border pb-10 lg:grid-cols-2 lg:items-end">
+        <div>
+          <p className="mb-5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            CodeGenie / Plans
           </p>
+          <h1 className="text-5xl font-medium tracking-[-0.05em] sm:text-6xl">
+            Build at your
+            <span className="block font-serif font-normal italic text-primary">
+              own pace.
+            </span>
+          </h1>
         </div>
-        <PricingTable
-          appearance={{
-            elements: {
-              pricingTableCard: "border! shadow-none! rounded-lg!",
-            },
-            baseTheme: currentTheme === "dark" ? dark : undefined,
-          }}
-        />
-      </section>
+        <p className="max-w-lg text-sm leading-6 text-muted-foreground lg:justify-self-end">
+          Start with a focused build, then move to Pro when you need more
+          generations and room to iterate. Your projects and source remain yours.
+        </p>
+      </div>
+
+      <PricingTable
+        appearance={{
+          elements: {
+            pricingTableCard: "border! border-border! shadow-none! rounded-xl! bg-card!",
+          },
+          baseTheme: currentTheme === "dark" ? dark : undefined,
+        }}
+      />
     </div>
   );
 }

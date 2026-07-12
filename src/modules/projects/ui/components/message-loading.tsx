@@ -1,55 +1,59 @@
+"use client";
+
+import { CheckIcon } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
-const ShimmerMessages = () => {
-  const messages = [
-    "Thinking...",
-    "Loading...",
-    "Generating...",
-    "Analyzing your request...",
-    "Building your website...",
-    "Crafting components...",
-    "Optimizing layout...",
-    "Adding final touches...",
-    "Almost ready...",
-  ];
+import { Spinner } from "@/components/ui/spinner";
 
-  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentMessageIndex((prev) => (prev + 1) % messages.length);
-    }, 2000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [messages.length]);
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-base text-muted-foreground animate-pulse">
-        {messages[currentMessageIndex]}
-      </span>
-    </div>
-  );
-};
+const stages = [
+  "Reading the product brief",
+  "Planning the component structure",
+  "Writing and validating the build",
+  "Preparing the live preview",
+];
 
 const MessageLoading = () => {
+  const [activeStage, setActiveStage] = useState(0);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setActiveStage((stage) => Math.min(stage + 1, stages.length - 1));
+    }, 3500);
+    return () => window.clearInterval(interval);
+  }, []);
+
   return (
-    <div className="flex flex-col group px-2 pb-4">
-      <div className="flex items-center gap-2 pl-2 mb-2">
-        <Image
-          src="/logo.svg"
-          alt="lovable-clone"
-          height={18}
-          width={18}
-          className="shrink-0"
-        />
-        <span className="text-sm font-medium">Lovable Clone</span>
+    <div className="max-w-full">
+      <div className="mb-3 flex items-center gap-2">
+        <Image src="/logo.svg" alt="CodeGenie" height={20} width={20} />
+        <span className="text-xs font-semibold">CodeGenie</span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-primary">
+          Building
+        </span>
       </div>
-      <div className="pl-8.5 flex flex-col gap-y-4">
-        <ShimmerMessages />
+      <div className="ml-7 rounded-lg border border-border bg-card/50 p-3">
+        {stages.map((stage, index) => (
+          <div
+            key={stage}
+            className="flex items-center gap-2.5 py-1.5 text-xs"
+          >
+            {index < activeStage ? (
+              <CheckIcon className="size-3.5 text-primary" />
+            ) : index === activeStage ? (
+              <Spinner className="size-3.5 text-primary" />
+            ) : (
+              <span className="mx-0.5 size-2.5 rounded-full border border-border" />
+            )}
+            <span
+              className={
+                index <= activeStage ? "text-foreground" : "text-muted-foreground/55"
+              }
+            >
+              {stage}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

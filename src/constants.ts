@@ -1,51 +1,45 @@
 export const PROJECT_TEMPLATES = [
   {
-    emoji: "🎬",
-    title: "Build a Netflix clone",
+    emoji: "✦",
+    title: "SaaS launch page",
+    description: "Polished marketing site",
     prompt:
-      "Build a Netflix-style homepage with a hero banner (use a nice, dark-mode compatible gradient here), movie sections, responsive cards, and a modal for viewing details using mock data and local state. Use dark mode.",
+      "Design and build a polished SaaS launch page for an AI productivity product. Include a confident hero, interactive product preview, social proof, feature storytelling, pricing, FAQ, and a strong final call to action. Use a restrained editorial visual system, excellent typography, and subtle motion.",
   },
   {
-    emoji: "📦",
-    title: "Build an admin dashboard",
+    emoji: "◫",
+    title: "Analytics cockpit",
+    description: "Data-rich dashboard",
     prompt:
-      "Create an admin dashboard with a sidebar, stat cards, a chart placeholder, and a basic table with filter and pagination using local state. Use clear visual grouping and balance in your design for a modern, professional look.",
+      "Create a modern analytics cockpit for a subscription business with a compact sidebar, revenue and retention metrics, interactive date filters, attractive charts, cohort insights, and a searchable customers table. Use realistic mock data and responsive interactions.",
   },
   {
-    emoji: "📋",
-    title: "Build a kanban board",
+    emoji: "⌘",
+    title: "Team command center",
+    description: "Projects and workflows",
     prompt:
-      "Build a kanban board with drag-and-drop using react-beautiful-dnd and support for adding and removing tasks with local state. Use consistent spacing, column widths, and hover effects for a polished UI.",
+      "Build a collaborative team command center with projects, a draggable kanban workflow, assignee avatars, priority filters, activity feed, and a quick-create dialog. Make every interaction work with local state and keep the interface compact and professional.",
   },
   {
-    emoji: "🗂️",
-    title: "Build a file manager",
+    emoji: "◎",
+    title: "Creator portfolio",
+    description: "Editorial personal site",
     prompt:
-      "Build a file manager with folder list, file grid, and options to rename or delete items using mock data and local state. Focus on spacing, clear icons, and visual distinction between folders and files.",
+      "Create a distinctive portfolio for a multidisciplinary product designer. Use an editorial grid, bold typography, immersive project cards, a detailed case-study modal, an about section, and a tasteful contact experience. Make it feel original rather than template-based.",
   },
   {
-    emoji: "📺",
-    title: "Build a YouTube clone",
+    emoji: "↗",
+    title: "AI support desk",
+    description: "Inbox and agent tools",
     prompt:
-      "Build a YouTube-style homepage with mock video thumbnails, a category sidebar, and a modal preview with title and description using local state. Ensure clean alignment and a well-organized grid layout.",
+      "Build an AI support desk interface with a customer inbox, conversation detail, sentiment and priority signals, suggested responses, knowledge citations, and resolution metrics. Include working filters and interaction states with realistic mock data.",
   },
   {
-    emoji: "🛍️",
-    title: "Build a store page",
+    emoji: "◇",
+    title: "Curated storefront",
+    description: "Premium commerce UI",
     prompt:
-      "Build a store page with category filters, a product grid, and local cart logic to add and remove items. Focus on clear typography, spacing, and button states for a great e-commerce UI.",
-  },
-  {
-    emoji: "🏡",
-    title: "Build an Airbnb clone",
-    prompt:
-      "Build an Airbnb-style listings grid with mock data, filter sidebar, and a modal with property details using local state. Use card spacing, soft shadows, and clean layout for a welcoming design.",
-  },
-  {
-    emoji: "🎵",
-    title: "Build a Spotify clone",
-    prompt:
-      "Build a Spotify-style music player with a sidebar for playlists, a main area for song details, and playback controls. Use local state for managing playback and song selection. Prioritize layout balance and intuitive control placement for a smooth user experience. Use dark mode.",
+      "Design a premium curated storefront for independent desk accessories. Include editorial collections, category filters, a responsive product grid, detailed product quick views, and a functional local cart. Use warm photography placeholders and sophisticated typography.",
   },
 ] as const;
 

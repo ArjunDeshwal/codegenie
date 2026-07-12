@@ -34,9 +34,9 @@ const FragmentWeb = ({ data }: FragmentWebProps) => {
 
   return (
     <div className="flex flex-col w-full h-full">
-      <div className="p-2 border-b bg-sidebar flex items-center gap-x-2">
+      <div className="flex h-11 items-center gap-2 border-b border-border bg-background px-2.5">
         <Hint text="Click to refresh" side="bottom" align="start">
-          <Button size="sm" variant="outline" onClick={onRefresh}>
+          <Button size="icon-sm" variant="ghost" onClick={onRefresh}>
             <RefreshCcwIcon />
           </Button>
         </Hint>
@@ -44,7 +44,7 @@ const FragmentWeb = ({ data }: FragmentWebProps) => {
           <Button
             size="sm"
             variant="outline"
-            className="flex-1 justify-start text-start font-normal"
+            className="h-7 flex-1 justify-start rounded-md bg-muted/45 text-start font-mono text-[10px] font-normal text-muted-foreground shadow-none"
             disabled={!data.sandboxUrl || copied}
             onClick={handleCopy}
           >
@@ -53,9 +53,9 @@ const FragmentWeb = ({ data }: FragmentWebProps) => {
         </Hint>
         <Hint text="Open in a new tab" side="bottom" align="start">
           <Button
-            size="sm"
+            size="icon-sm"
             disabled={!data.sandboxUrl}
-            variant="outline"
+            variant="ghost"
             onClick={() => {
               if (!data.sandboxUrl) {
                 return;

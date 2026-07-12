@@ -1,23 +1,26 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import {
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  MoonIcon,
+  SunIcon,
+} from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { useTheme } from "next-themes";
+
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCurrentTheme } from "@/hooks/use-current-theme";
 import { useTRPC } from "@/trpc/client";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDownIcon, ChevronLeftIcon, SunMoonIcon } from "lucide-react";
-import { useTheme } from "next-themes";
-import Image from "next/image";
-import Link from "next/link";
 
 interface ProjectHeaderProps {
   projectId: string;
@@ -28,54 +31,43 @@ const ProjectHeader = ({ projectId }: ProjectHeaderProps) => {
   const { data: project } = useQuery(
     trpc.projects.getOne.queryOptions({ id: projectId })
   );
-
-  const { setTheme, theme } = useTheme();
+  const { setTheme } = useTheme();
+  const currentTheme = useCurrentTheme();
 
   return (
-    <header className="p-2 flex justify-between items-center border-b">
+    <header className="flex h-[53px] shrink-0 items-center border-b border-border bg-background px-2.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="focus-visible:ring-0 hover:bg-transparent hover:opacity-75 transition-opacity pl-2!"
+            className="min-w-0 justify-start px-1.5 hover:bg-muted"
           >
-            <Image src="/logo.svg" alt="lovable-clone" height={18} width={18} />
-            <span className="text-sm font-medium">{project?.name}</span>
-            <ChevronDownIcon />
+            <Image src="/logo.svg" alt="CodeGenie" height={22} width={22} />
+            <span className="min-w-0 truncate text-xs font-semibold">
+              {project?.name ?? "Loading project"}
+            </span>
+            <ChevronDownIcon className="size-3.5 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="bottom" align="start">
+        <DropdownMenuContent side="bottom" align="start" className="w-52">
           <DropdownMenuItem asChild>
             <Link href="/">
-              <ChevronLeftIcon />
-              <span>Go to Dashboard</span>
+              <ChevronLeftIcon /> Dashboard
             </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="gap-2">
-              <SunMoonIcon className="size-4 text-muted-foreground" />
-              <span>Appearance</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
-                  <DropdownMenuRadioItem value="light">
-                    <span>Light</span>
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark">
-                    <span>Dark</span>
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system">
-                    <span>System</span>
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
+          <DropdownMenuItem
+            onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
+          >
+            {currentTheme === "dark" ? <SunIcon /> : <MoonIcon />}
+            {currentTheme === "dark" ? "Light appearance" : "Dark appearance"}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <span className="ml-auto hidden font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground sm:block">
+        Conversation
+      </span>
     </header>
   );
 };

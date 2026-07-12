@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { siteConfig } from "@/config/site";
 import { TRPCReactProvider } from "@/trpc/client";
 import "./globals.css";
@@ -49,20 +50,22 @@ export default function RootLayout({
           appearance={{
             baseTheme: shadcn,
             variables: {
-              colorPrimary: "#c96342",
+              colorPrimary: "#2f7d5a",
             },
           }}
         >
           <TRPCReactProvider>
-            <ThemeProvider
-              enableSystem
-              attribute="class"
-              defaultTheme="system"
-              disableTransitionOnChange
-            >
-              <Toaster />
-              {children}
-            </ThemeProvider>
+            <TooltipProvider delayDuration={250}>
+              <ThemeProvider
+                enableSystem
+                attribute="class"
+                defaultTheme="system"
+                disableTransitionOnChange
+              >
+                <Toaster richColors position="bottom-right" />
+                {children}
+              </ThemeProvider>
+            </TooltipProvider>
           </TRPCReactProvider>
         </ClerkProvider>
       </body>

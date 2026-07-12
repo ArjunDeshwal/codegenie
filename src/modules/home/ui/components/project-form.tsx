@@ -1,155 +1,122 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpIcon, Loader2Icon } from "lucide-react";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import TextareaAutosize from "react-textarea-autosize";
-import { toast } from "sonner";
-import { z } from "zod";
-
-import { Button } from "@/components/ui/button";
-import { Form, FormField } from "@/components/ui/form";
-import { PROJECT_TEMPLATES } from "@/constants";
-import { cn } from "@/lib/utils";
-import { useTRPC } from "@/trpc/client";
+import { ArrowUpIcon, SparklesIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
-const formSchema = z.object({
-  value: z
-    .string()
-    .min(1, { message: "Value is required" })
-    .max(10_000, { message: "Value is too long" }),
-});
+import {
+  PromptInput,
+  PromptInputFooter,
+  type PromptInputMessage,
+  PromptInputProvider,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+  usePromptInputController,
+} from "@/components/ai-elements/prompt-input";
+import { PROJECT_TEMPLATES } from "@/constants";
+import { useTRPC } from "@/trpc/client";
 
-const ProjectForm = () => {
+const ProjectComposer = () => {
   const router = useRouter();
   const clerk = useClerk();
-
+  const controller = usePromptInputController();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      value: "",
-    },
-  });
 
   const createProject = useMutation(
     trpc.projects.create.mutationOptions({
       onSuccess: (data) => {
-        router.push(`/projects/${data.id}`);
-
         queryClient.invalidateQueries(trpc.projects.getMany.queryOptions());
         queryClient.invalidateQueries(trpc.usage.status.queryOptions());
+        router.push(`/projects/${data.id}`);
       },
       onError: (error) => {
         if (error.data?.code === "UNAUTHORIZED") {
           clerk.openSignIn();
         }
-
         if (error.data?.code === "TOO_MANY_REQUESTS") {
           router.push("/pricing");
         }
-
         toast.error(error.message);
       },
     })
   );
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    await createProject.mutateAsync({
-      value: values.value,
-    });
+  const onSubmit = async ({ text }: PromptInputMessage) => {
+    const value = text.trim();
+    if (!value) return;
+    await createProject.mutateAsync({ value });
   };
 
-  const onSelectTemplate = (content: string) => {
-    form.setValue("value", content, {
-      shouldDirty: true,
-      shouldTouch: true,
-      shouldValidate: true,
-    });
-  };
-
-  const [isFocused, setIsFocused] = useState(false);
+  const value = controller.textInput.value;
   const isPending = createProject.isPending;
-  const isDisabled = isPending || !form.formState.isValid;
 
   return (
-    <Form {...form}>
-      <section className="space-y-6">
-        <form
-          onSubmit={form.handleSubmit(onSubmit)}
-          className={cn(
-            "relative border p-4 pt-1 rounded-xl bg-sidebar dark:bg-sidebar transition-all",
-            isFocused && "shadow-xs"
-          )}
+    <div className="space-y-4">
+      <div className="rounded-[1.7rem] border border-white/18 bg-[#101316]/95 p-1.5 shadow-[0_32px_90px_-22px_rgba(0,0,0,0.72)] backdrop-blur-xl sm:rounded-[2rem]">
+        <PromptInput
+          onSubmit={onSubmit}
+          className="[&_[data-slot=input-group]]:rounded-[1.35rem] [&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:bg-transparent [&_[data-slot=input-group]]:shadow-none sm:[&_[data-slot=input-group]]:rounded-[1.6rem]"
         >
-          <FormField
-            control={form.control}
-            name="value"
-            render={({ field }) => (
-              <TextareaAutosize
-                {...field}
-                placeholder="What would you like to build?"
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                minRows={2}
-                maxRows={8}
-                className="pt-4 resize-none border-none w-full outline-none bg-transparent"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    form.handleSubmit(onSubmit)(e);
-                  }
-                }}
-                disabled={isPending}
-              />
-            )}
+          <PromptInputTextarea
+            autoFocus
+            maxLength={10_000}
+            rows={5}
+            style={{ minHeight: "9.5rem" }}
+            placeholder="What should CodeGenie bring to life?"
+            className="px-5 pt-5 text-[15px] leading-6 text-white placeholder:text-white/38 sm:px-6 sm:pt-6 sm:text-lg"
           />
-
-          <div className="flex gap-x-2 items-end justify-between pt-2">
-            <div className="text-[10px] text-muted-foreground font-mono">
-              <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                <span>&#8984;</span>Enter
-              </kbd>
-              &nbsp;to submit
-            </div>
-            <Button
-              className={cn(
-                "size-8 rounded-full",
-                isDisabled && "bg-muted-foreground border"
-              )}
-              disabled={isDisabled}
+          <PromptInputFooter className="px-3 pb-3 sm:px-4 sm:pb-4">
+            <PromptInputTools>
+              <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-white/60">
+                <SparklesIcon className="size-3 text-[#d8ff62]" />
+                Genie mode
+              </span>
+              <span className="hidden text-xs text-white/35 sm:inline">
+                Shift + Enter for a new line
+              </span>
+            </PromptInputTools>
+            <PromptInputSubmit
+              status={isPending ? "submitted" : undefined}
+              disabled={isPending || !value.trim()}
+              className="size-10 rounded-full bg-[#d8ff62] text-[#11150c] hover:bg-[#e4ff91] disabled:bg-white/10 disabled:text-white/30"
             >
-              {isPending ? (
-                <Loader2Icon className="animate-spin" />
-              ) : (
-                <ArrowUpIcon />
-              )}
-            </Button>
-          </div>
-        </form>
+              {isPending ? undefined : <ArrowUpIcon className="size-4" />}
+            </PromptInputSubmit>
+          </PromptInputFooter>
+        </PromptInput>
+      </div>
 
-        <div className="flex-wrap justify-center gap-2 hidden md:flex max-w-3xl">
-          {PROJECT_TEMPLATES.map((template) => (
-            <Button
-              key={template.title}
-              variant="outline"
-              size="sm"
-              className="bg-white dark:bg-sidebar"
-              onClick={() => onSelectTemplate(template.prompt)}
-            >
-              {template.emoji}&nbsp;&nbsp;
-              {template.title}
-            </Button>
-          ))}
-        </div>
-      </section>
-    </Form>
+      <div className="flex flex-wrap justify-center gap-2">
+        {PROJECT_TEMPLATES.map((template) => (
+          <button
+            key={template.title}
+            type="button"
+            onClick={() => controller.textInput.setInput(template.prompt)}
+            className="group flex min-w-0 items-center gap-2 rounded-full border border-white/12 bg-black/15 px-3 py-2 text-left text-white backdrop-blur-md transition-all hover:border-white/30 hover:bg-black/25"
+          >
+            <span className="flex size-5 shrink-0 items-center justify-center text-xs">
+              {template.emoji}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[11px] font-medium text-white/75">
+                {template.title}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 };
+
+const ProjectForm = () => (
+  <PromptInputProvider>
+    <ProjectComposer />
+  </PromptInputProvider>
+);
 
 export { ProjectForm };

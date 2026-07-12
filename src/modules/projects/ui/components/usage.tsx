@@ -1,8 +1,6 @@
 import { useAuth } from '@clerk/nextjs';
-import { formatDuration, intervalToDuration } from 'date-fns';
 import { CrownIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 
@@ -11,39 +9,23 @@ interface UsageProps {
   msBeforeNext: number;
 }
 
-const Usage = ({ msBeforeNext, points }: UsageProps) => {
+const Usage = ({ points }: UsageProps) => {
   const { has } = useAuth();
   const hasProAccess = has?.({ plan: 'pro' });
 
-  const resetTime = useMemo(() => {
-    try {
-      return formatDuration(
-        intervalToDuration({
-          start: new Date(),
-          end: new Date(Date.now() + msBeforeNext),
-        }),
-        { format: ['months', 'days', 'hours'] },
-      );
-    } catch (error) {
-      console.error('Error formatting duration ' + error);
-      return 'unknown';
-    }
-  }, [msBeforeNext]);
-
   return (
-    <div className="rounded-t-xl bg-background border border-b-0 p-2.5">
+    <div className="mb-2 flex items-center px-1">
       <div className="flex items-center gap-x-2">
         <div>
-          <p className="text-sm">
-            {points} {hasProAccess ? '' : 'free'} credits remaining
+          <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+            {points} {hasProAccess ? '' : 'free'} credits available
           </p>
-          <p className="text-xs text-muted-foreground">Resets in {resetTime}</p>
         </div>
 
         {!hasProAccess && (
-          <Button asChild size="sm" variant="tertiary" className="ml-auto">
+          <Button asChild size="xs" variant="ghost" className="h-6 text-[10px] text-primary">
             <Link href="/pricing">
-              <CrownIcon /> Upgrade
+              <CrownIcon className="size-3" /> Upgrade
             </Link>
           </Button>
         )}

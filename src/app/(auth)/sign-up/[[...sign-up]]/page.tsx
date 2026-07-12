@@ -12,7 +12,8 @@ export default function SignUpPage() {
     <SignUp
       appearance={{
         elements: {
-          cardBox: "border! shadow-none! border-lg!"
+          cardBox: "border! border-border! shadow-none! rounded-xl!",
+          card: "bg-card!",
         },
         baseTheme: currentTheme === "dark" ? dark : undefined,
       }}

@@ -24,10 +24,13 @@ const buttonVariants = cva(
           "bg-primary/25 dark:bg-primary/30 text-primary shadow-xs hover:bg-primary/20 dark:hover:bg-primary/25",
       },
       size: {
+        xs: "h-7 rounded-md gap-1 px-2.5 text-xs has-[>svg]:px-2",
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
         sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
         icon: "size-9",
+        "icon-xs": "size-7 rounded-md p-0",
+        "icon-sm": "size-8 rounded-md p-0",
       },
     },
     defaultVariants: {
