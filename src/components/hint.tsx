@@ -1,28 +1,31 @@
-"use Client";
-import{
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from "@/components/ui/tooltip"
+"use client";
 
-interface HintProp{
-    children:React.ReactNode,
-    text:string,
-    side?:"top"|"right"|"bottom"|"left",
-    align?:"start"|"center"|"end",
-};
-export const Hint=({children,text, side="top", align="center"}:HintProp)=>{
-    return(
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    {children}
-                </TooltipTrigger>
-                <TooltipContent side={side} align={align}>
-                    <p>{text}</p>
-                </TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
-    )
+import { ReactNode } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip";
+
+interface HintProps {
+  children: ReactNode;
+  text: string;
+  side?: "top" | "right" | "bottom" | "left" | undefined;
+  align?: "center" | "start" | "end" | undefined;
 }
+
+const Hint = ({ align, children, text, side }: HintProps) => {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side={side} align={align}>
+          <p>{text}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
+export { Hint };

@@ -1,35 +1,32 @@
-import { ProjectView } from "@/modules/projects/ui/views/project-view";
+import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
+import { ErrorBoundary } from "react-error-boundary";
+
 import { getQueryClient, trpc } from "@/trpc/server";
-import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
+import { ProjectView } from "@/modules/projects/ui/views/project-view";
 import { Suspense } from "react";
 
-
-interface Props {
-    params: Promise<{
-        projectId:string;   
-    }>
+interface ProjectPageProps {
+  params: Promise<{ projectId: string }>;
 }
 
-const Page = async({params}: Props) =>{
-    const {projectId}=await params;
-    const queryClient=getQueryClient();
-    void queryClient.prefetchQuery(trpc.message.getMany.
-        queryOptions({
-            projectId,
-        }));
-    void queryClient.prefetchQuery(trpc.projects.getOne.
-        queryOptions({
-            id:projectId,
-        })    
-    );
-    return(
-        <HydrationBoundary state={dehydrate(queryClient)}>
-            <Suspense fallback={<p>Loading...</p>}>
-                <ProjectView projectId={projectId}/>
-            </Suspense>
-            
-        </HydrationBoundary>
-    );
-}
+export default async function ProjectPage({ params }: ProjectPageProps) {
+  const { projectId } = await params;
 
-export default Page;
+  const queryClient = getQueryClient();
+  void queryClient.prefetchQuery(
+    trpc.projects.getOne.queryOptions({ id: projectId })
+  );
+  void queryClient.prefetchQuery(
+    trpc.messages.getMany.queryOptions({ projectId })
+  );
+
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <ErrorBoundary fallback={<p>Error...</p>}>
+        <Suspense fallback={<p>Loading...</p>}>
+          <ProjectView projectId={projectId} />
+        </Suspense>
+      </ErrorBoundary>
+    </HydrationBoundary>
+  );
+}
