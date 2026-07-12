@@ -5,7 +5,7 @@ import {
   createState,
   createTool,
   type Message,
-  gemini,
+  openai,
   type Tool,
 } from '@inngest/agent-kit';
 import { z } from 'zod';
@@ -26,12 +26,35 @@ interface AgentState {
   files: FileCollection;
 }
 
+const tokenRouterModel = () =>
+  openai({
+    model: 'qwen/qwen3-coder-next',
+    apiKey: process.env.TOKENROUTER_API_KEY,
+    baseUrl:
+      process.env.TOKENROUTER_BASE_URL || 'https://api.tokenrouter.com/v1/',
+    defaultParameters: { temperature: 0.1 },
+  });
+
+const ensureClientDirective = (path: string, content: string) => {
+  const needsClientDirective =
+    /\.(tsx|jsx)$/.test(path) &&
+    /\b(useState|useEffect|useCallback|useMemo|useRef|useReducer|useContext|window|document|localStorage|sessionStorage)\b/.test(
+      content,
+    );
+
+  if (needsClientDirective && !/^\s*['"]use client['"];?/m.test(content)) {
+    return `'use client';\n\n${content.trimStart()}`;
+  }
+
+  return content;
+};
+
 export const codeAgentFunction = inngest.createFunction(
   { id: 'code-agent' },
   { event: 'code-agent/run' },
   async ({ event, step }) => {
     const sandboxId = await step.run('get-sandbox-id', async () => {
-      const sandbox = await Sandbox.create('vibe-nextjs-bek-2');
+      const sandbox = await Sandbox.create('codegenie-nextjs');
       await sandbox.setTimeout(SANDBOX_TIMEOUT_IN_MS);
       return sandbox.sandboxId;
     });
@@ -78,12 +101,7 @@ export const codeAgentFunction = inngest.createFunction(
       name: 'code-agent',
       description: 'An expert coding agent',
       system: PROMPT,
-      model: gemini({
-        model: 'gemini-2.0-flash',
-        defaultParameters: {
-          generationConfig: { temperature: 0.1 },
-        },
-      }),
+      model: tokenRouterModel(),
       tools: [
         createTool({
           name: 'terminal',
@@ -142,8 +160,12 @@ export const codeAgentFunction = inngest.createFunction(
                   const sandbox = await getSandbox(sandboxId);
 
                   for (const file of files) {
-                    await sandbox.files.write(file.path, file.content);
-                    updatedFiles[file.path] = file.content;
+                    const content = ensureClientDirective(
+                      file.path,
+                      file.content,
+                    );
+                    await sandbox.files.write(file.path, content);
+                    updatedFiles[file.path] = content;
                   }
 
                   return updatedFiles;
@@ -221,24 +243,14 @@ export const codeAgentFunction = inngest.createFunction(
       name: 'fragment-title-generator',
       description: 'A fragment title generator',
       system: FRAGMENT_TITLE_PROMPT,
-      model: gemini({
-        model: 'gemini-2.0-flash',
-        defaultParameters: {
-          generationConfig: { temperature: 0.1 },
-        },
-      }),
+      model: tokenRouterModel(),
     });
 
     const responseGenerator = createAgent({
       name: 'response-generator',
       description: 'A response generator',
       system: RESPONSE_PROMPT,
-      model: gemini({
-        model: 'gemini-2.0-flash',
-        defaultParameters: {
-          generationConfig: { temperature: 0.1 },
-        },
-      }),
+      model: tokenRouterModel(),
     });
 
     const { output: fragmentTitleOutput } = await fragmentTitleGenerator.run(

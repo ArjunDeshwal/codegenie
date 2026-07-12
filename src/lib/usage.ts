@@ -29,6 +29,11 @@ export async function consumeCredits() {
     throw new Error('User not autheticated');
   }
 
+  // Local development should never consume a user's production allowance.
+  if (process.env.NODE_ENV === 'development') {
+    return;
+  }
+
   const usageTracker = await getUsageTracker();
   const result = await usageTracker.consume(userId, GENERATION_COST);
 
@@ -40,6 +45,15 @@ export async function getUsageStatus() {
 
   if (!userId) {
     throw new Error('User not autheticated');
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    return {
+      remainingPoints: 999,
+      msBeforeNext: 0,
+      consumedPoints: 0,
+      isFirstInDuration: true,
+    };
   }
 
   const usageTracker = await getUsageTracker();

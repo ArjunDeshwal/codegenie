@@ -5,6 +5,7 @@ import { ArrowUpRightIcon, MoonIcon, PlusIcon, SunIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { UserControl } from "@/components/user-control";
@@ -16,6 +17,11 @@ const Navbar = () => {
   const scrolled = useScroll();
   const currentTheme = useCurrentTheme();
   const { setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <nav
@@ -28,6 +34,7 @@ const Navbar = () => {
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="group flex items-center gap-2.5">
           <Image
+            suppressHydrationWarning
             src="/logo.svg"
             alt="CodeGenie"
             width={30}
@@ -50,13 +57,20 @@ const Navbar = () => {
             Pricing
           </Link>
           <Button
+            suppressHydrationWarning
             aria-label="Toggle theme"
             variant="ghost"
             size="icon-sm"
             className="text-white/65 hover:bg-white/8 hover:text-white"
             onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
           >
-            {currentTheme === "dark" ? <SunIcon /> : <MoonIcon />}
+            {!mounted ? (
+              <span className="size-4" aria-hidden="true" />
+            ) : currentTheme === "dark" ? (
+              <SunIcon />
+            ) : (
+              <MoonIcon />
+            )}
           </Button>
 
           <SignedOut>
