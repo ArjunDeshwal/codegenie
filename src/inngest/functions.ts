@@ -20,10 +20,15 @@ import {
   parseAgentOutput,
 } from './utils';
 import { SANDBOX_TIMEOUT_IN_MS } from '@/constants';
+import {
+  validateSandboxPreview,
+  validationMessage,
+} from './sandbox-health';
 
 interface AgentState {
   summary: string;
   files: FileCollection;
+  previewValidated: boolean;
 }
 
 const tokenRouterModel = () =>
@@ -90,6 +95,7 @@ export const codeAgentFunction = inngest.createFunction(
       {
         summary: '',
         files: {},
+        previewValidated: false,
       },
       {
         messages: previousMessages,
@@ -177,6 +183,7 @@ export const codeAgentFunction = inngest.createFunction(
 
             if (typeof newFiles === 'object') {
               network.state.data.files = newFiles;
+              network.state.data.previewValidated = false;
             }
           },
         }),
@@ -204,6 +211,26 @@ export const codeAgentFunction = inngest.createFunction(
             });
           },
         }),
+        createTool({
+          name: 'validateApp',
+          description:
+            'Validate that the generated Next.js app renders on port 3000. Call this after the final file change and fix every reported error before finishing.',
+          parameters: z.object({}),
+          handler: async (_input, { step, network }) => {
+            const validation = await step?.run('validate-app', async () => {
+              const sandbox = await getSandbox(sandboxId);
+              return validateSandboxPreview(sandbox);
+            });
+
+            if (!validation) {
+              network.state.data.previewValidated = false;
+              return 'VALIDATION_ERROR: Validation did not run.';
+            }
+
+            network.state.data.previewValidated = validation.ok;
+            return validationMessage(validation);
+          },
+        }),
       ],
       lifecycle: {
         onResponse: async ({ result, network }) => {
@@ -227,9 +254,9 @@ export const codeAgentFunction = inngest.createFunction(
       maxIter: 15,
       defaultState: state,
       router: async ({ network }) => {
-        const summary = network.state.data.summary;
+        const { previewValidated, summary } = network.state.data;
 
-        if (summary) {
+        if (summary && previewValidated) {
           return;
         }
 
@@ -237,7 +264,81 @@ export const codeAgentFunction = inngest.createFunction(
       },
     });
 
-    const result = await network.run(event.data.value, { state });
+    await network.run(event.data.value, { state });
+
+    let previewValidation = await step.run(
+      'validate-generated-app',
+      async () => {
+        const sandbox = await getSandbox(sandboxId);
+        return validateSandboxPreview(sandbox);
+      },
+    );
+
+    if (
+      !previewValidation.ok &&
+      Object.keys(state.data.files || {}).length > 0
+    ) {
+      const repairState = createState<AgentState>({
+        summary: '',
+        files: state.data.files,
+        previewValidated: false,
+      });
+
+      await codeAgent.run(
+        `The generated preview failed validation. Fix the application using the available tools. You must call validateApp after the final change and only finish after it returns VALIDATION_OK.\n\nValidation error:\n${previewValidation.error || 'Unknown preview error.'}`,
+        { state: repairState, maxIter: 6, step },
+      );
+
+      state.data.files = repairState.data.files;
+      state.data.summary = repairState.data.summary;
+      state.data.previewValidated = repairState.data.previewValidated;
+
+      previewValidation = await step.run(
+        'validate-repaired-app',
+        async () => {
+          const sandbox = await getSandbox(sandboxId);
+          return validateSandboxPreview(sandbox);
+        },
+      );
+    }
+
+    const finalFiles = state.data.files || {};
+    const finalSummary =
+      state.data.summary ||
+      '<task_summary>Completed the requested application and verified that its preview renders successfully.</task_summary>';
+    const isError =
+      !previewValidation.ok || Object.keys(finalFiles).length === 0;
+
+    const sandboxUrl = await step.run('get-sandbox-url', async () => {
+      const sandbox = await getSandbox(sandboxId);
+      const host = sandbox.getHost(3000);
+      return `https://${host}`;
+    });
+
+    if (isError) {
+      const errorContent = previewValidation.error
+        ? `The generated app could not render: ${previewValidation.error.slice(0, 1_000)}`
+        : 'Something went wrong. Please try again.';
+
+      await step.run('save-error', async () =>
+        prisma.message.create({
+          data: {
+            projectId: event.data.projectId,
+            content: errorContent,
+            role: 'ASSISTANT',
+            type: 'ERROR',
+          },
+        }),
+      );
+
+      return {
+        url: sandboxUrl,
+        title: 'Generation Error',
+        files: finalFiles,
+        summary: finalSummary,
+        validation: previewValidation,
+      };
+    }
 
     const fragmentTitleGenerator = createAgent({
       name: 'fragment-title-generator',
@@ -254,35 +355,14 @@ export const codeAgentFunction = inngest.createFunction(
     });
 
     const { output: fragmentTitleOutput } = await fragmentTitleGenerator.run(
-      result.state.data.summary,
+      finalSummary,
     );
 
     const { output: responseOutput } = await responseGenerator.run(
-      result.state.data.summary,
+      finalSummary,
     );
 
-    const isError =
-      !result.state.data.summary ||
-      Object.keys(result.state.data.files || {}).length === 0;
-
-    const sandboxUrl = await step.run('get-sandbox-url', async () => {
-      const sandbox = await getSandbox(sandboxId);
-      const host = sandbox.getHost(3000);
-      return `https://${host}`;
-    });
-
     await step.run('save-result', async () => {
-      if (isError) {
-        return await prisma.message.create({
-          data: {
-            projectId: event.data.projectId,
-            content: 'Something went wrong. Please try again.',
-            role: 'ASSISTANT',
-            type: 'ERROR',
-          },
-        });
-      }
-
       return await prisma.message.create({
         data: {
           projectId: event.data.projectId,
@@ -293,7 +373,7 @@ export const codeAgentFunction = inngest.createFunction(
             create: {
               sandboxUrl,
               title: parseAgentOutput(fragmentTitleOutput),
-              files: result.state.data.files,
+              files: finalFiles,
             },
           },
         },
@@ -303,8 +383,9 @@ export const codeAgentFunction = inngest.createFunction(
     return {
       url: sandboxUrl,
       title: 'Fragment',
-      files: result.state.data.files,
-      summary: result.state.data.summary,
+      files: finalFiles,
+      summary: finalSummary,
+      validation: previewValidation,
     };
   },
 );

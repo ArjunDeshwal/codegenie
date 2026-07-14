@@ -1,5 +1,5 @@
 # This is a config for E2B sandbox template.
-# You can use template ID (ytfhp6l5zmnxinrxr783) or template name (codegenie-nextjs) to create a sandbox:
+# You can use template ID (zhfstoz4klstjatapr91) or template name (codegenie-nextjs) to create a sandbox:
 
 # Python SDK
 # from e2b import Sandbox, AsyncSandbox
@@ -10,8 +10,10 @@
 # import { Sandbox } from 'e2b'
 # const sandbox = await Sandbox.create('codegenie-nextjs')
 
-team_id = "bf80777f-4f45-4d4c-bbfe-e86c2e200b07"
+team_id = "194ad074-845a-47dc-9f4a-f58cb5842a4d"
 start_cmd = "/compile_page.sh"
 dockerfile = "e2b.Dockerfile"
 template_name = "codegenie-nextjs"
-template_id = "ytfhp6l5zmnxinrxr783"
+template_id = "zhfstoz4klstjatapr91"
+cpu_count = 2
+memory_mb = 2048
