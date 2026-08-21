@@ -34,11 +34,11 @@ const ShaderGradientBackground = () => (
       rotationZ={50}
       shader="defaults"
       type="plane"
-      uAmplitude={0.45}
-      uDensity={1}
-      uFrequency={3.4}
-      uSpeed={0.055}
-      uStrength={1.45}
+      uAmplitude={0.95}
+      uDensity={1.18}
+      uFrequency={4.4}
+      uSpeed={0.2}
+      uStrength={2.5}
       uTime={0}
     />
   </ShaderGradientCanvas>
