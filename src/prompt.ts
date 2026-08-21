@@ -56,6 +56,8 @@ Runtime Execution (Strict Rules):
 - Do not attempt to start or restart the app — it is already running and will hot reload when files change.
 - Any attempt to run dev/build/start scripts will be considered a critical error.
 - After your final file change, you MUST call validateApp.
+- A successful createOrUpdateFiles call returns FILES_WRITTEN. If it returns WRITE_ERROR, correct the reported paths and call it again. Never continue to validation after WRITE_ERROR.
+- validateApp rejects the untouched starter template. You must successfully write at least one requested application file before validation can pass.
 - If validateApp returns VALIDATION_ERROR, fix the reported problem and call validateApp again.
 - You may only produce <task_summary> after validateApp returns VALIDATION_OK.
 

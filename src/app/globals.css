@@ -180,7 +180,7 @@
 }
 
 .codegenie-hero {
-  background: #0b0e12;
+  background: #566a9e;
 }
 
 .codegenie-aurora {
@@ -188,28 +188,27 @@
   inset: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 8%, rgb(35 42 50 / 0.6), transparent 34%),
-    linear-gradient(180deg, #0b0e12 0%, #111820 30%, #163c61 49%, #e66d32 79%, #f1a53a 100%);
+    radial-gradient(circle at 24% 32%, rgb(169 133 200 / 0.58), transparent 46%),
+    radial-gradient(circle at 76% 40%, rgb(88 166 173 / 0.58), transparent 50%),
+    linear-gradient(110deg, #7564a2 0%, #6379ad 48%, #4f91a0 100%);
 }
 
-.codegenie-aurora::before {
-  content: '';
+.codegenie-shader-gradient {
   position: absolute;
-  inset: 25% -10% -20%;
-  background:
-    radial-gradient(ellipse at 18% 52%, #2358d8 0%, transparent 40%),
-    radial-gradient(ellipse at 83% 45%, #0b7893 0%, transparent 37%),
-    radial-gradient(ellipse at 52% 90%, #ff6b35 0%, transparent 52%);
-  filter: blur(28px) saturate(112%);
+  inset: -8%;
+  height: 116% !important;
+  width: 116% !important;
+  filter: saturate(88%) contrast(98%);
   opacity: 0.92;
-  transform: scale(1.1);
 }
 
 .codegenie-aurora::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgb(5 8 11 / 0.2), transparent 42%, rgb(8 10 12 / 0.05));
+  background:
+    radial-gradient(circle at 50% 38%, transparent 0%, rgb(24 28 52 / 0.04) 62%, rgb(24 28 52 / 0.13) 100%),
+    linear-gradient(180deg, rgb(24 28 52 / 0.13), transparent 34%, rgb(24 28 52 / 0.03));
 }
 
 .codegenie-orbit {
@@ -238,7 +237,13 @@
 .codegenie-grain {
   position: absolute;
   inset: 0;
-  opacity: 0.15;
+  opacity: 0.07;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
   mix-blend-mode: soft-light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codegenie-shader-gradient {
+    display: none;
+  }
 }

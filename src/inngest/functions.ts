@@ -23,7 +23,13 @@ import { SANDBOX_TIMEOUT_IN_MS } from '@/constants';
 import {
   validateSandboxPreview,
   validationMessage,
+  type PreviewValidationResult,
 } from './sandbox-health';
+import {
+  generatedFilesInputSchema,
+  generatedFilesToolMessage,
+  writeGeneratedFiles,
+} from './generated-files';
 
 interface AgentState {
   summary: string;
@@ -40,19 +46,12 @@ const tokenRouterModel = () =>
     defaultParameters: { temperature: 0.1 },
   });
 
-const ensureClientDirective = (path: string, content: string) => {
-  const needsClientDirective =
-    /\.(tsx|jsx)$/.test(path) &&
-    /\b(useState|useEffect|useCallback|useMemo|useRef|useReducer|useContext|window|document|localStorage|sessionStorage)\b/.test(
-      content,
-    );
-
-  if (needsClientDirective && !/^\s*['"]use client['"];?/m.test(content)) {
-    return `'use client';\n\n${content.trimStart()}`;
-  }
-
-  return content;
-};
+const noGeneratedFilesValidation = (): PreviewValidationResult => ({
+  ok: false,
+  restarted: false,
+  error:
+    'No generated files were written. The starter template was not accepted as a completed build.',
+});
 
 export const codeAgentFunction = inngest.createFunction(
   { id: 'code-agent' },
@@ -145,46 +144,33 @@ export const codeAgentFunction = inngest.createFunction(
         }),
         createTool({
           name: 'createOrUpdateFiles',
-          description: 'Create or update files in the sandbox',
-          parameters: z.object({
-            files: z.array(
-              z.object({
-                path: z.string(),
-                content: z.string(),
-              }),
-            ),
-          }),
+          description:
+            'Create or update one or more files in the sandbox. Every path must be a non-empty relative path such as "app/page.tsx".',
+          parameters: generatedFilesInputSchema,
           handler: async (
             { files },
             { step, network }: Tool.Options<AgentState>,
           ) => {
-            const newFiles = await step?.run(
+            const writeResult = await step?.run(
               'createOrUpdateFiles',
               async () => {
-                try {
-                  const updatedFiles = network.state.data.files || {};
-                  const sandbox = await getSandbox(sandboxId);
-
-                  for (const file of files) {
-                    const content = ensureClientDirective(
-                      file.path,
-                      file.content,
-                    );
-                    await sandbox.files.write(file.path, content);
-                    updatedFiles[file.path] = content;
-                  }
-
-                  return updatedFiles;
-                } catch (error) {
-                  return 'Error: ' + error;
-                }
+                const sandbox = await getSandbox(sandboxId);
+                return writeGeneratedFiles(
+                  sandbox,
+                  network.state.data.files || {},
+                  files,
+                );
               },
             );
 
-            if (typeof newFiles === 'object') {
-              network.state.data.files = newFiles;
+            if (!writeResult) {
               network.state.data.previewValidated = false;
+              return 'WRITE_ERROR: The file-writing step did not run. Call createOrUpdateFiles again.';
             }
+
+            network.state.data.files = writeResult.files;
+            network.state.data.previewValidated = false;
+            return generatedFilesToolMessage(writeResult);
           },
         }),
         createTool({
@@ -217,6 +203,11 @@ export const codeAgentFunction = inngest.createFunction(
             'Validate that the generated Next.js app renders on port 3000. Call this after the final file change and fix every reported error before finishing.',
           parameters: z.object({}),
           handler: async (_input, { step, network }) => {
+            if (Object.keys(network.state.data.files || {}).length === 0) {
+              network.state.data.previewValidated = false;
+              return validationMessage(noGeneratedFilesValidation());
+            }
+
             const validation = await step?.run('validate-app', async () => {
               const sandbox = await getSandbox(sandboxId);
               return validateSandboxPreview(sandbox);
@@ -238,7 +229,14 @@ export const codeAgentFunction = inngest.createFunction(
             lastAssistantTextMessageContent(result);
 
           if (lastAssistantTextMessageText && network) {
-            if (lastAssistantTextMessageText.includes('<task_summary>')) {
+            const hasGeneratedFiles =
+              Object.keys(network.state.data.files || {}).length > 0;
+
+            if (
+              lastAssistantTextMessageText.includes('<task_summary>') &&
+              hasGeneratedFiles &&
+              network.state.data.previewValidated
+            ) {
               network.state.data.summary = lastAssistantTextMessageText;
             }
           }
@@ -254,9 +252,10 @@ export const codeAgentFunction = inngest.createFunction(
       maxIter: 15,
       defaultState: state,
       router: async ({ network }) => {
-        const { previewValidated, summary } = network.state.data;
+        const { files, previewValidated, summary } = network.state.data;
+        const hasGeneratedFiles = Object.keys(files || {}).length > 0;
 
-        if (summary && previewValidated) {
+        if (summary && previewValidated && hasGeneratedFiles) {
           return;
         }
 
@@ -266,13 +265,13 @@ export const codeAgentFunction = inngest.createFunction(
 
     await network.run(event.data.value, { state });
 
-    let previewValidation = await step.run(
-      'validate-generated-app',
-      async () => {
-        const sandbox = await getSandbox(sandboxId);
-        return validateSandboxPreview(sandbox);
-      },
-    );
+    const hasGeneratedFiles = Object.keys(state.data.files || {}).length > 0;
+    let previewValidation = hasGeneratedFiles
+      ? await step.run('validate-generated-app', async () => {
+          const sandbox = await getSandbox(sandboxId);
+          return validateSandboxPreview(sandbox);
+        })
+      : noGeneratedFilesValidation();
 
     if (
       !previewValidation.ok &&
@@ -293,13 +292,13 @@ export const codeAgentFunction = inngest.createFunction(
       state.data.summary = repairState.data.summary;
       state.data.previewValidated = repairState.data.previewValidated;
 
-      previewValidation = await step.run(
-        'validate-repaired-app',
-        async () => {
-          const sandbox = await getSandbox(sandboxId);
-          return validateSandboxPreview(sandbox);
-        },
-      );
+      previewValidation =
+        Object.keys(state.data.files || {}).length > 0
+          ? await step.run('validate-repaired-app', async () => {
+              const sandbox = await getSandbox(sandboxId);
+              return validateSandboxPreview(sandbox);
+            })
+          : noGeneratedFilesValidation();
     }
 
     const finalFiles = state.data.files || {};
@@ -317,7 +316,7 @@ export const codeAgentFunction = inngest.createFunction(
 
     if (isError) {
       const errorContent = previewValidation.error
-        ? `The generated app could not render: ${previewValidation.error.slice(0, 1_000)}`
+        ? `Generation failed: ${previewValidation.error.slice(0, 1_000)}`
         : 'Something went wrong. Please try again.';
 
       await step.run('save-error', async () =>
