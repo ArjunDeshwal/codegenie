@@ -10,10 +10,17 @@ RUN chmod +x /compile_page.sh
 # Install dependencies and customize sandbox
 WORKDIR /home/user/nextjs-app
 
-RUN npx --yes create-next-app@15.5.18 . --yes
+RUN npx --yes create-next-app@15.5.23 . --yes
 
-RUN npx --yes shadcn@2.6.3 init --yes -b neutral --force
-RUN npx --yes shadcn@2.6.3 add --all --yes
+RUN npx --yes shadcn@4.8.3 init --yes --defaults --force
+RUN npx --yes shadcn@4.8.3 add --yes \
+    accordion alert alert-dialog avatar badge breadcrumb button button-group \
+    calendar card carousel chart checkbox collapsible command context-menu \
+    dialog drawer dropdown-menu empty field hover-card input input-group \
+    input-otp item kbd label menubar native-select navigation-menu pagination \
+    popover progress radio-group resizable scroll-area select separator sheet \
+    sidebar skeleton slider sonner spinner switch table tabs textarea toggle \
+    toggle-group tooltip
 RUN npm install tw-animate-css clsx tailwind-merge
 
 # Move the Nextjs app to the home directory and remove the nextjs-app directory

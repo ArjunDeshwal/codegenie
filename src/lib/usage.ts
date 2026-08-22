@@ -1,47 +1,11 @@
-import { RateLimiterPrisma } from 'rate-limiter-flexible';
 import { auth } from '@clerk/nextjs/server';
 
 import prisma from './prisma';
 
 const FREE_POINTS = 1;
 const PRO_POINTS = 100;
-const DURATION = 30 * 24 * 60 * 60; // 30 days
-const GENERATION_COST = 1;
-
-export async function getUsageTracker() {
-  const { has } = await auth();
-  const hasProAccess = has({ plan: 'pro' });
-
-  const usageTracker = new RateLimiterPrisma({
-    storeClient: prisma,
-    tableName: 'Usage',
-    points: hasProAccess ? PRO_POINTS : FREE_POINTS,
-    duration: DURATION,
-  });
-
-  return usageTracker;
-}
-
-export async function consumeCredits() {
-  const { userId } = await auth();
-
-  if (!userId) {
-    throw new Error('User not autheticated');
-  }
-
-  // Local development should never consume a user's production allowance.
-  if (process.env.NODE_ENV === 'development') {
-    return;
-  }
-
-  const usageTracker = await getUsageTracker();
-  const result = await usageTracker.consume(userId, GENERATION_COST);
-
-  return result;
-}
-
 export async function getUsageStatus() {
-  const { userId } = await auth();
+  const { userId, has } = await auth();
 
   if (!userId) {
     throw new Error('User not autheticated');
@@ -56,8 +20,15 @@ export async function getUsageStatus() {
     };
   }
 
-  const usageTracker = await getUsageTracker();
-  const result = await usageTracker.get(userId);
-
-  return result;
+  const result = await prisma.usage.findUnique({ where: { key: userId } });
+  const now = Date.now();
+  const expired = !result?.expire || result.expire.getTime() <= now;
+  const consumedPoints = expired ? 0 : result.points;
+  const allowance = has({ plan: 'pro' }) ? PRO_POINTS : FREE_POINTS;
+  return {
+    remainingPoints: Math.max(0, allowance - consumedPoints),
+    msBeforeNext: expired ? 0 : Math.max(0, result.expire!.getTime() - now),
+    consumedPoints,
+    isFirstInDuration: !result || expired,
+  };
 }

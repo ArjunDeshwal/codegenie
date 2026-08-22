@@ -23,6 +23,56 @@ model Project {
   updatedAt DateTime @updatedAt
 
   messages Message[]
+  generations Generation[] @relation("ProjectGenerations")
+
+  activeGenerationId String?     @unique
+  activeGeneration   Generation? @relation("ActiveGeneration", fields: [activeGenerationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, updatedAt])
+}
+
+enum GenerationStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCEL_REQUESTED
+  CANCELLED
+}
+
+enum GenerationStage {
+  QUEUED
+  PREPARING
+  RESTORING
+  GENERATING
+  VALIDATING
+  REPAIRING
+  SAVING
+}
+
+enum FailureCode {
+  DISPATCH_FAILED
+  SANDBOX_FAILED
+  MODEL_FAILED
+  TOOL_INPUT_INVALID
+  VALIDATION_FAILED
+  PERSISTENCE_FAILED
+  CANCELLED
+  INTERNAL
+  LEGACY_ORPHANED
+}
+
+enum CreditReservationStatus {
+  RESERVED
+  SETTLED
+  REFUNDED
+}
+
+enum PreviewStatus {
+  STARTING
+  READY
+  EXPIRED
+  FAILED
 }
 
 enum MessageRole {
@@ -44,9 +94,13 @@ model Message {
   updatedAt DateTime @updatedAt
 
   fragment Fragment?
+  promptGeneration Generation? @relation("GenerationPrompt")
+  resultGeneration Generation? @relation("GenerationResult")
 
   projectId String
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt, id])
 }
 
 model Fragment {
@@ -54,12 +108,91 @@ model Fragment {
   messageId String @unique
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
-  sandboxUrl String
+  sandboxUrl String?
   title String
   files Json
+  templateVersion String @default("legacy-1")
+  checksum String?
+  byteSize Int @default(0)
+  isRestorable Boolean @default(false)
+
+  generation Generation? @relation("GenerationFragment")
+  baseForGenerations Generation[] @relation("GenerationBaseFragment")
+  previewSessions PreviewSession[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Generation {
+  id String @id @default(uuid())
+  userId String
+  clientRequestId String
+
+  projectId String
+  project Project @relation("ProjectGenerations", fields: [projectId], references: [id], onDelete: Cascade)
+  activeForProject Project? @relation("ActiveGeneration")
+
+  promptMessageId String @unique
+  promptMessage Message @relation("GenerationPrompt", fields: [promptMessageId], references: [id], onDelete: Cascade)
+  resultMessageId String? @unique
+  resultMessage Message? @relation("GenerationResult", fields: [resultMessageId], references: [id], onDelete: SetNull)
+
+  baseFragmentId String?
+  baseFragment Fragment? @relation("GenerationBaseFragment", fields: [baseFragmentId], references: [id], onDelete: SetNull)
+  fragmentId String? @unique
+  fragment Fragment? @relation("GenerationFragment", fields: [fragmentId], references: [id], onDelete: SetNull)
+
+  status GenerationStatus @default(QUEUED)
+  stage GenerationStage @default(QUEUED)
+  failureCode FailureCode?
+  failureMessage String?
+  inngestEventId String?
+  inngestRunId String?
+  sandboxId String?
+  primaryModel String
+  fallbackModel String?
+  fallbackUsed Boolean @default(false)
+  attemptCount Int @default(0)
+  startedAt DateTime?
+  finishedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creditReservation CreditReservation?
+
+  @@unique([userId, clientRequestId])
+  @@index([projectId, createdAt])
+  @@index([status, updatedAt])
+}
+
+model CreditReservation {
+  id String @id @default(uuid())
+  generationId String @unique
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  userId String
+  points Int @default(1)
+  status CreditReservationStatus @default(RESERVED)
+  createdAt DateTime @default(now())
+  settledAt DateTime?
+  refundedAt DateTime?
+
+  @@index([userId, createdAt])
+}
+
+model PreviewSession {
+  id String @id @default(uuid())
+  fragmentId String
+  fragment Fragment @relation(fields: [fragmentId], references: [id], onDelete: Cascade)
+  sandboxId String
+  url String
+  status PreviewStatus @default(STARTING)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fragmentId, createdAt])
+  @@index([status, expiresAt])
 }
 
 model Usage {

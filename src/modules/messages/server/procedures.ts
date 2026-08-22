@@ -1,8 +1,7 @@
 import { z } from "zod";
 
-import { inngest } from "@/inngest/client";
 import prisma from "@/lib/prisma";
-import { consumeCredits } from "@/lib/usage";
+import { createGenerationForProject, dispatchGeneration } from "@/lib/generations";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { TRPCError } from "@trpc/server";
 
@@ -25,8 +24,10 @@ export const messagesRouter = createTRPCRouter({
           updatedAt: "asc",
         },
         include: {
-          fragment: true,
+          fragment: { include: { previewSessions: { orderBy: { createdAt: "desc" }, take: 1 } } },
+          promptGeneration: true,
         },
+        take: 100,
       });
 
       return messages;
@@ -39,6 +40,7 @@ export const messagesRouter = createTRPCRouter({
           .min(1, { message: "Value is required" })
           .max(10_000, { message: "Value is too long" }),
         projectId: z.string().min(1, { message: "projectId is required" }),
+        clientRequestId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -56,39 +58,14 @@ export const messagesRouter = createTRPCRouter({
         });
       }
 
-      try {
-        await consumeCredits();
-      } catch (error) {
-        if (error instanceof Error) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Something went wrong.",
-          });
-        } else {
-          throw new TRPCError({
-            code: "TOO_MANY_REQUESTS",
-            message: "You ran out of credits",
-          });
-        }
-      }
-
-      const createdMessage = await prisma.message.create({
-        data: {
-          projectId: existingProject.id,
-          content: input.value,
-          role: "USER",
-          type: "RESULT",
-        },
+      const generation = await createGenerationForProject({
+        projectId: existingProject.id,
+        prompt: input.value,
+        clientRequestId: input.clientRequestId || crypto.randomUUID(),
+        userId: ctx.auth.userId,
+        isPro: ctx.auth.has({ plan: "pro" }),
       });
-
-      await inngest.send({
-        name: "code-agent/run",
-        data: {
-          value: input.value,
-          projectId: existingProject.id,
-        },
-      });
-
-      return createdMessage;
+      await dispatchGeneration(generation.id, existingProject.id);
+      return generation.promptMessage;
     }),
 });

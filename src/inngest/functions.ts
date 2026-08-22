@@ -1,390 +1,302 @@
-import { Sandbox } from '@e2b/code-interpreter';
-import {
-  createAgent,
-  createNetwork,
-  createState,
-  createTool,
-  type Message,
-  openai,
-  type Tool,
-} from '@inngest/agent-kit';
-import { z } from 'zod';
+import { createHash } from "node:crypto";
 
-import prisma from '@/lib/prisma';
-import { FRAGMENT_TITLE_PROMPT, PROMPT, RESPONSE_PROMPT } from '@/prompt';
-import { FileCollection } from '@/types';
-import { inngest } from './client';
-import {
-  getSandbox,
-  lastAssistantTextMessageContent,
-  parseAgentOutput,
-} from './utils';
-import { SANDBOX_TIMEOUT_IN_MS } from '@/constants';
-import {
-  validateSandboxPreview,
-  validationMessage,
-  type PreviewValidationResult,
-} from './sandbox-health';
-import {
-  generatedFilesInputSchema,
-  generatedFilesToolMessage,
-  writeGeneratedFiles,
-} from './generated-files';
+import { Sandbox } from "@e2b/code-interpreter";
+import * as Sentry from "@sentry/nextjs";
+import { createAgent, createNetwork, createState, createTool, type Message, openai, type Tool } from "@inngest/agent-kit";
+import { z } from "zod";
+
+import { SANDBOX_TIMEOUT_IN_MS } from "@/constants";
+import { FailureCode, GenerationStage } from "@/generated/prisma";
+import { failGeneration, FALLBACK_MODEL, PRIMARY_MODEL, updateGenerationStage } from "@/lib/generations";
+import prisma from "@/lib/prisma";
+import { PROMPT } from "@/prompt";
+import type { FileCollection } from "@/types";
+import { generatedFilesInputSchema, generatedFilesToolMessage, validateReadPaths, writeGeneratedFiles } from "./generated-files";
+import { inngest } from "./client";
+import { validateSandboxPreview, validationMessage } from "./sandbox-health";
+import { getSandbox } from "./utils";
 
 interface AgentState {
+  title: string;
   summary: string;
   files: FileCollection;
+  changedPaths: string[];
   previewValidated: boolean;
+  operationCount: number;
 }
 
-const tokenRouterModel = () =>
-  openai({
-    model: 'qwen/qwen3-coder-next',
-    apiKey: process.env.TOKENROUTER_API_KEY,
-    baseUrl:
-      process.env.TOKENROUTER_BASE_URL || 'https://api.tokenrouter.com/v1/',
-    defaultParameters: { temperature: 0.1 },
-  });
-
-const noGeneratedFilesValidation = (): PreviewValidationResult => ({
-  ok: false,
-  restarted: false,
-  error:
-    'No generated files were written. The starter template was not accepted as a completed build.',
+const model = (modelName: string) => openai({
+  model: modelName,
+  apiKey: process.env.TOKENROUTER_API_KEY,
+  baseUrl: process.env.TOKENROUTER_BASE_URL || "https://api.tokenrouter.com/v1/",
+  defaultParameters: { temperature: 0.1 },
 });
 
+const userFailure = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/sandbox|e2b/i.test(message)) return [FailureCode.SANDBOX_FAILED, "The preview environment could not be prepared. Retry the build."] as const;
+  if (/token|model|openai|fetch|timeout/i.test(message)) return [FailureCode.MODEL_FAILED, "The code model did not complete the build. Your credit was refunded."] as const;
+  return [FailureCode.INTERNAL, "The build stopped unexpectedly. Your credit was refunded."] as const;
+};
+
+const killSandbox = async (sandboxId: string | null | undefined) => {
+  if (!sandboxId) return;
+  try { await Sandbox.kill(sandboxId); } catch { /* Already expired or terminated. */ }
+};
+
+const collectArtifactFiles = async (sandbox: Sandbox, overrides: FileCollection) => {
+  const collected: FileCollection = { ...overrides };
+  const queue = ["app/layout.tsx", "app/globals.css", "lib/utils.ts", ...Object.keys(overrides)];
+  const visited = new Set<string>();
+  const importPattern = /from\s+["']@\/(components|lib)\/([^"']+)["']/g;
+
+  while (queue.length > 0 && Object.keys(collected).length < 80) {
+    const path = queue.shift()!;
+    if (visited.has(path)) continue;
+    visited.add(path);
+    if (!collected[path]) {
+      try { collected[path] = String(await sandbox.files.read(path)); } catch { continue; }
+    }
+    for (const match of collected[path].matchAll(importPattern)) {
+      const base = `${match[1]}/${match[2]}`;
+      for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`]) {
+        if (!visited.has(candidate)) queue.push(candidate);
+      }
+    }
+  }
+  return collected;
+};
+
+const makeAgent = (sandboxId: string, selectedModel: string) => createAgent<AgentState>({
+  name: `code-agent-${selectedModel.replace(/[^a-z0-9]/gi, "-")}`,
+  description: "A constrained frontend coding agent",
+  system: PROMPT,
+  model: model(selectedModel),
+  tools: [
+    createTool({
+      name: "createOrUpdateFiles",
+      description: "Create or update frontend source files in approved directories.",
+      parameters: generatedFilesInputSchema,
+      handler: async ({ files }, { step, network }: Tool.Options<AgentState>) => {
+        network.state.data.operationCount += 1;
+        const result = await step?.run(`write-files-${network.state.data.operationCount}`, async () =>
+          writeGeneratedFiles(await getSandbox(sandboxId), network.state.data.files, files));
+        if (!result) return "WRITE_ERROR: The write did not run.";
+        network.state.data.files = result.files;
+        network.state.data.changedPaths = Array.from(new Set([...network.state.data.changedPaths, ...result.writtenPaths]));
+        network.state.data.previewValidated = false;
+        return generatedFilesToolMessage(result);
+      },
+    }),
+    createTool({
+      name: "readFiles",
+      description: "Read approved frontend source files.",
+      parameters: z.object({ files: z.array(z.string()).min(1).max(20) }),
+      handler: async ({ files }, { step, network }) => {
+        const safePaths = validateReadPaths(files);
+        network.state.data.operationCount += 1;
+        return step?.run(`read-files-${network.state.data.operationCount}`, async () => {
+          const sandbox = await getSandbox(sandboxId);
+          const contents = await Promise.all(safePaths.map(async (path) => ({ path, content: await sandbox.files.read(path) })));
+          return JSON.stringify(contents).slice(0, 80_000);
+        });
+      },
+    }),
+    createTool({
+      name: "deleteFiles",
+      description: "Delete approved frontend source files.",
+      parameters: z.object({ files: z.array(z.string()).min(1).max(20) }),
+      handler: async ({ files }, { step, network }) => {
+        const safePaths = validateReadPaths(files);
+        network.state.data.operationCount += 1;
+        await step?.run(`delete-files-${network.state.data.operationCount}`, async () => {
+          const sandbox = await getSandbox(sandboxId);
+          await Promise.all(safePaths.map((path) => sandbox.files.remove(path)));
+        });
+        for (const path of safePaths) delete network.state.data.files[path];
+        network.state.data.changedPaths = Array.from(new Set([...network.state.data.changedPaths, ...safePaths]));
+        network.state.data.previewValidated = false;
+        return `FILES_DELETED: ${safePaths.join(", ")}`;
+      },
+    }),
+    createTool({
+      name: "validateApp",
+      description: "Compile and probe the generated application.",
+      parameters: z.object({}),
+      handler: async (_input, { step, network }) => {
+        if (network.state.data.changedPaths.length === 0 || !network.state.data.files["app/page.tsx"]) {
+          network.state.data.previewValidated = false;
+          return "VALIDATION_ERROR: A meaningful app/page.tsx change is required.";
+        }
+        network.state.data.operationCount += 1;
+        const result = await step?.run(`validate-app-${network.state.data.operationCount}`, async () =>
+          validateSandboxPreview(await getSandbox(sandboxId)));
+        network.state.data.previewValidated = Boolean(result?.ok);
+        return result ? validationMessage(result) : "VALIDATION_ERROR: Validation did not run.";
+      },
+    }),
+    createTool({
+      name: "completeGeneration",
+      description: "Finish after validation with a short title and user summary.",
+      parameters: z.object({ title: z.string().trim().min(1).max(60), summary: z.string().trim().min(1).max(600) }),
+      handler: async ({ title, summary }, { network }) => {
+        if (!network.state.data.previewValidated || network.state.data.changedPaths.length === 0) {
+          return "COMPLETION_REJECTED: Call validateApp successfully after the final file change.";
+        }
+        network.state.data.title = title;
+        network.state.data.summary = summary;
+        return "GENERATION_COMPLETE";
+      },
+    }),
+  ],
+});
+
+const runAgent = async ({ sandboxId, prompt, selectedModel, state, maxIter }: {
+  sandboxId: string;
+  prompt: string;
+  selectedModel: string;
+  state: ReturnType<typeof createState<AgentState>>;
+  maxIter: number;
+}) => {
+  const agent = makeAgent(sandboxId, selectedModel);
+  const network = createNetwork<AgentState>({
+    name: `generation-${selectedModel}`,
+    agents: [agent],
+    maxIter,
+    defaultState: state,
+    router: ({ network }) => network.state.data.summary && network.state.data.previewValidated ? undefined : agent,
+  });
+  await network.run(prompt, { state });
+};
+
 export const codeAgentFunction = inngest.createFunction(
-  { id: 'code-agent' },
-  { event: 'code-agent/run' },
+  {
+    id: "code-agent-v2",
+    retries: 2,
+    concurrency: { limit: 1, key: "event.data.projectId" },
+    cancelOn: [{ event: "codegenie/generation.cancelled", if: "async.data.generationId == event.data.generationId" }],
+    onFailure: async ({ event }) => {
+      const original = event.data.event as { data?: { generationId?: string } };
+      if (!original.data?.generationId) return;
+      const generation = await prisma.generation.findUnique({ where: { id: original.data.generationId } });
+      const [code, message] = userFailure(event.data.error);
+      Sentry.captureException(event.data.error, { tags: {
+        generationId: original.data.generationId,
+        stage: generation?.stage,
+        model: generation?.fallbackUsed ? generation.fallbackModel : generation?.primaryModel,
+        failureCode: code,
+      } });
+      await killSandbox(generation?.sandboxId);
+      await failGeneration(original.data.generationId, code, message);
+    },
+  },
+  { event: "codegenie/generation.requested" },
   async ({ event, step }) => {
-    const sandboxId = await step.run('get-sandbox-id', async () => {
-      const sandbox = await Sandbox.create('codegenie-nextjs');
+    const generationId = String(event.data.generationId);
+    const generation = await step.run("load-generation", () => prisma.generation.findUnique({
+      where: { id: generationId },
+      include: { promptMessage: true, baseFragment: true },
+    }));
+    if (!generation || ["CANCELLED", "SUCCEEDED", "FAILED"].includes(generation.status)) return;
+
+    await step.run("mark-preparing", () => updateGenerationStage(generationId, GenerationStage.PREPARING, {
+      startedAt: new Date(), attemptCount: { increment: 1 },
+    }));
+    const sandboxId = await step.run("create-sandbox", async () => {
+      const sandbox = await Sandbox.create("codegenie-nextjs");
       await sandbox.setTimeout(SANDBOX_TIMEOUT_IN_MS);
+      await prisma.generation.update({ where: { id: generationId }, data: { sandboxId: sandbox.sandboxId } });
       return sandbox.sandboxId;
     });
 
-    const previousMessages = await step.run(
-      'get-previous-messages',
-      async () => {
-        const formattedMessages: Message[] = [];
-
-        const messages = await prisma.message.findMany({
-          where: {
-            projectId: event.data.projectId,
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 5,
-        });
-
-        for (const message of messages) {
-          formattedMessages.push({
-            type: 'text',
-            role: message.role === 'ASSISTANT' ? 'assistant' : 'user',
-            content: message.content,
-          });
-        }
-
-        return formattedMessages.reverse();
-      },
-    );
-
-    const state = createState<AgentState>(
-      {
-        summary: '',
-        files: {},
-        previewValidated: false,
-      },
-      {
-        messages: previousMessages,
-      },
-    );
-
-    // Create a new agent with a system prompt (you can add optional tools, too)
-    const codeAgent = createAgent<AgentState>({
-      name: 'code-agent',
-      description: 'An expert coding agent',
-      system: PROMPT,
-      model: tokenRouterModel(),
-      tools: [
-        createTool({
-          name: 'terminal',
-          description: 'Use the terminal to run commands',
-          parameters: z.object({
-            command: z.string(),
-          }),
-          handler: async ({ command }, { step }) => {
-            return await step?.run('terminal', async () => {
-              const buffers = {
-                stdout: '',
-                stderr: '',
-              };
-
-              try {
-                const sandbox = await getSandbox(sandboxId);
-                const result = await sandbox.commands.run(command, {
-                  onStdout: (data: string) => {
-                    buffers.stdout += data;
-                  },
-                  onStderr: (data: string) => {
-                    buffers.stderr += data;
-                  },
-                });
-
-                return result.stdout;
-              } catch (error) {
-                console.error(
-                  `command failed: ${error}\nstdOut: ${buffers.stdout}\nstdError: ${buffers.stderr}`,
-                );
-                return `command failed: ${error}\nstdOut: ${buffers.stdout}\nstdError: ${buffers.stderr}`;
-              }
-            });
-          },
-        }),
-        createTool({
-          name: 'createOrUpdateFiles',
-          description:
-            'Create or update one or more files in the sandbox. Every path must be a non-empty relative path such as "app/page.tsx".',
-          parameters: generatedFilesInputSchema,
-          handler: async (
-            { files },
-            { step, network }: Tool.Options<AgentState>,
-          ) => {
-            const writeResult = await step?.run(
-              'createOrUpdateFiles',
-              async () => {
-                const sandbox = await getSandbox(sandboxId);
-                return writeGeneratedFiles(
-                  sandbox,
-                  network.state.data.files || {},
-                  files,
-                );
-              },
-            );
-
-            if (!writeResult) {
-              network.state.data.previewValidated = false;
-              return 'WRITE_ERROR: The file-writing step did not run. Call createOrUpdateFiles again.';
-            }
-
-            network.state.data.files = writeResult.files;
-            network.state.data.previewValidated = false;
-            return generatedFilesToolMessage(writeResult);
-          },
-        }),
-        createTool({
-          name: 'readFiles',
-          description: 'Read files from the sandbox',
-          parameters: z.object({
-            files: z.array(z.string()),
-          }),
-          handler: async ({ files }, { step }) => {
-            return await step?.run('readFiles', async () => {
-              try {
-                const sandbox = await getSandbox(sandboxId);
-                const contents = [];
-
-                for (const file of files) {
-                  const content = await sandbox.files.read(file);
-                  contents.push({ path: file, content });
-                }
-
-                return JSON.stringify(contents);
-              } catch (error) {
-                return 'Error: ' + error;
-              }
-            });
-          },
-        }),
-        createTool({
-          name: 'validateApp',
-          description:
-            'Validate that the generated Next.js app renders on port 3000. Call this after the final file change and fix every reported error before finishing.',
-          parameters: z.object({}),
-          handler: async (_input, { step, network }) => {
-            if (Object.keys(network.state.data.files || {}).length === 0) {
-              network.state.data.previewValidated = false;
-              return validationMessage(noGeneratedFilesValidation());
-            }
-
-            const validation = await step?.run('validate-app', async () => {
-              const sandbox = await getSandbox(sandboxId);
-              return validateSandboxPreview(sandbox);
-            });
-
-            if (!validation) {
-              network.state.data.previewValidated = false;
-              return 'VALIDATION_ERROR: Validation did not run.';
-            }
-
-            network.state.data.previewValidated = validation.ok;
-            return validationMessage(validation);
-          },
-        }),
-      ],
-      lifecycle: {
-        onResponse: async ({ result, network }) => {
-          const lastAssistantTextMessageText =
-            lastAssistantTextMessageContent(result);
-
-          if (lastAssistantTextMessageText && network) {
-            const hasGeneratedFiles =
-              Object.keys(network.state.data.files || {}).length > 0;
-
-            if (
-              lastAssistantTextMessageText.includes('<task_summary>') &&
-              hasGeneratedFiles &&
-              network.state.data.previewValidated
-            ) {
-              network.state.data.summary = lastAssistantTextMessageText;
-            }
-          }
-
-          return result;
-        },
-      },
-    });
-
-    const network = createNetwork<AgentState>({
-      name: 'coding-agent-network',
-      agents: [codeAgent],
-      maxIter: 15,
-      defaultState: state,
-      router: async ({ network }) => {
-        const { files, previewValidated, summary } = network.state.data;
-        const hasGeneratedFiles = Object.keys(files || {}).length > 0;
-
-        if (summary && previewValidated && hasGeneratedFiles) {
-          return;
-        }
-
-        return codeAgent;
-      },
-    });
-
-    await network.run(event.data.value, { state });
-
-    const hasGeneratedFiles = Object.keys(state.data.files || {}).length > 0;
-    let previewValidation = hasGeneratedFiles
-      ? await step.run('validate-generated-app', async () => {
-          const sandbox = await getSandbox(sandboxId);
-          return validateSandboxPreview(sandbox);
-        })
-      : noGeneratedFilesValidation();
-
-    if (
-      !previewValidation.ok &&
-      Object.keys(state.data.files || {}).length > 0
-    ) {
-      const repairState = createState<AgentState>({
-        summary: '',
-        files: state.data.files,
-        previewValidated: false,
+    const baseFiles = (generation.baseFragment?.files || {}) as FileCollection;
+    if (Object.keys(baseFiles).length > 0) {
+      await step.run("restore-artifact", async () => {
+        await updateGenerationStage(generationId, GenerationStage.RESTORING);
+        const sandbox = await getSandbox(sandboxId);
+        for (const [path, content] of Object.entries(baseFiles)) await sandbox.files.write(path, content);
       });
-
-      await codeAgent.run(
-        `The generated preview failed validation. Fix the application using the available tools. You must call validateApp after the final change and only finish after it returns VALIDATION_OK.\n\nValidation error:\n${previewValidation.error || 'Unknown preview error.'}`,
-        { state: repairState, maxIter: 6, step },
-      );
-
-      state.data.files = repairState.data.files;
-      state.data.summary = repairState.data.summary;
-      state.data.previewValidated = repairState.data.previewValidated;
-
-      previewValidation =
-        Object.keys(state.data.files || {}).length > 0
-          ? await step.run('validate-repaired-app', async () => {
-              const sandbox = await getSandbox(sandboxId);
-              return validateSandboxPreview(sandbox);
-            })
-          : noGeneratedFilesValidation();
     }
 
-    const finalFiles = state.data.files || {};
-    const finalSummary =
-      state.data.summary ||
-      '<task_summary>Completed the requested application and verified that its preview renders successfully.</task_summary>';
-    const isError =
-      !previewValidation.ok || Object.keys(finalFiles).length === 0;
+    const history = await step.run("load-history", async () => {
+      const rows = await prisma.message.findMany({
+        where: { projectId: generation.projectId, id: { not: generation.promptMessageId } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 6,
+      });
+      return rows.reverse().map<Message>((message) => ({
+        type: "text", role: message.role === "ASSISTANT" ? "assistant" : "user", content: message.content,
+      }));
+    });
+    const state = createState<AgentState>({
+      title: "", summary: "", files: baseFiles, changedPaths: [], previewValidated: false, operationCount: 0,
+    }, { messages: history });
 
-    const sandboxUrl = await step.run('get-sandbox-url', async () => {
+    await step.run("mark-generating", () => updateGenerationStage(generationId, GenerationStage.GENERATING));
+    await runAgent({ sandboxId, prompt: generation.promptMessage.content, selectedModel: generation.primaryModel || PRIMARY_MODEL, state, maxIter: 10 });
+    await step.run("mark-validating", () => updateGenerationStage(generationId, GenerationStage.VALIDATING));
+    let validation = await step.run("final-validation-primary", async () => {
+      if (state.data.changedPaths.length === 0 || !state.data.files["app/page.tsx"]) return { ok: false, restarted: false, error: "No meaningful page artifact was generated." };
+      return validateSandboxPreview(await getSandbox(sandboxId));
+    });
+
+    if ((!validation.ok || !state.data.summary) && generation.fallbackModel) {
+      await step.run("mark-repairing", () => updateGenerationStage(generationId, GenerationStage.REPAIRING, { fallbackUsed: true }));
+      state.data.summary = ""; state.data.title = ""; state.data.previewValidated = false;
+      await runAgent({
+        sandboxId,
+        prompt: `Finish or repair the current application. The primary model did not complete successfully: ${validation.error || "the structured completion was missing"}. Inspect existing files, make the minimum complete fix, validate, then call completeGeneration.`,
+        selectedModel: generation.fallbackModel || FALLBACK_MODEL,
+        state, maxIter: 6,
+      });
+      validation = await step.run("final-validation-fallback", async () => validateSandboxPreview(await getSandbox(sandboxId)));
+    }
+
+    const current = await prisma.generation.findUnique({ where: { id: generationId } });
+    if (!current || ["CANCELLED", "CANCEL_REQUESTED"].includes(current.status)) { await killSandbox(sandboxId); return; }
+    if (!validation.ok || !state.data.summary || state.data.changedPaths.length === 0) {
+      Sentry.captureMessage("Generated artifact failed final validation", { level: "warning", tags: {
+        generationId, stage: GenerationStage.VALIDATING, model: current.fallbackUsed ? current.fallbackModel : current.primaryModel,
+        failureCode: FailureCode.VALIDATION_FAILED,
+      } });
+      await killSandbox(sandboxId);
+      await failGeneration(generationId, FailureCode.VALIDATION_FAILED, `The generated app did not pass validation: ${(validation.error || "unknown error").slice(0, 500)}`);
+      return;
+    }
+
+    await step.run("save-artifact", async () => {
+      await updateGenerationStage(generationId, GenerationStage.SAVING);
       const sandbox = await getSandbox(sandboxId);
-      const host = sandbox.getHost(3000);
-      return `https://${host}`;
-    });
-
-    if (isError) {
-      const errorContent = previewValidation.error
-        ? `Generation failed: ${previewValidation.error.slice(0, 1_000)}`
-        : 'Something went wrong. Please try again.';
-
-      await step.run('save-error', async () =>
-        prisma.message.create({
+      const artifactFiles = await collectArtifactFiles(sandbox, state.data.files);
+      const filesJson = JSON.stringify(artifactFiles);
+      const checksum = createHash("sha256").update(filesJson).digest("hex");
+      const sandboxUrl = `https://${sandbox.getHost(3000)}`;
+      const expiresAt = new Date(Date.now() + SANDBOX_TIMEOUT_IN_MS);
+      await prisma.$transaction(async (tx) => {
+        const resultMessage = await tx.message.create({
           data: {
-            projectId: event.data.projectId,
-            content: errorContent,
-            role: 'ASSISTANT',
-            type: 'ERROR',
-          },
-        }),
-      );
-
-      return {
-        url: sandboxUrl,
-        title: 'Generation Error',
-        files: finalFiles,
-        summary: finalSummary,
-        validation: previewValidation,
-      };
-    }
-
-    const fragmentTitleGenerator = createAgent({
-      name: 'fragment-title-generator',
-      description: 'A fragment title generator',
-      system: FRAGMENT_TITLE_PROMPT,
-      model: tokenRouterModel(),
-    });
-
-    const responseGenerator = createAgent({
-      name: 'response-generator',
-      description: 'A response generator',
-      system: RESPONSE_PROMPT,
-      model: tokenRouterModel(),
-    });
-
-    const { output: fragmentTitleOutput } = await fragmentTitleGenerator.run(
-      finalSummary,
-    );
-
-    const { output: responseOutput } = await responseGenerator.run(
-      finalSummary,
-    );
-
-    await step.run('save-result', async () => {
-      return await prisma.message.create({
-        data: {
-          projectId: event.data.projectId,
-          content: parseAgentOutput(responseOutput),
-          role: 'ASSISTANT',
-          type: 'RESULT',
-          fragment: {
-            create: {
-              sandboxUrl,
-              title: parseAgentOutput(fragmentTitleOutput),
-              files: finalFiles,
-            },
-          },
-        },
+            projectId: generation.projectId, content: state.data.summary, role: "ASSISTANT", type: "RESULT",
+            fragment: { create: {
+              sandboxUrl, title: state.data.title || "Generated App", files: artifactFiles,
+              templateVersion: "codegenie-nextjs-v1", checksum, byteSize: Buffer.byteLength(filesJson), isRestorable: true,
+              previewSessions: { create: { sandboxId, url: sandboxUrl, status: "READY", expiresAt } },
+            } },
+          }, include: { fragment: true },
+        });
+        await tx.creditReservation.updateMany({ where: { generationId, status: "RESERVED" }, data: { status: "SETTLED", settledAt: new Date() } });
+        await tx.generation.update({ where: { id: generationId }, data: {
+          status: "SUCCEEDED", resultMessageId: resultMessage.id, fragmentId: resultMessage.fragment!.id, finishedAt: new Date(),
+        } });
+        await tx.project.update({ where: { id: generation.projectId }, data: { activeGenerationId: null, updatedAt: new Date() } });
       });
     });
+  },
+);
 
-    return {
-      url: sandboxUrl,
-      title: 'Fragment',
-      files: finalFiles,
-      summary: finalSummary,
-      validation: previewValidation,
-    };
+export const cancelGenerationFunction = inngest.createFunction(
+  { id: "cancel-generation-sandbox", retries: 1 },
+  { event: "codegenie/generation.cancelled" },
+  async ({ event, step }) => {
+    const generation = await step.run("load-cancelled-generation", () => prisma.generation.findUnique({ where: { id: event.data.generationId } }));
+    await step.run("kill-cancelled-sandbox", () => killSandbox(generation?.sandboxId));
   },
 );

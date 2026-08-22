@@ -13,10 +13,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const { projectId } = await params;
 
   const queryClient = getQueryClient();
-  void queryClient.prefetchQuery(
+  await queryClient.prefetchQuery(
     trpc.projects.getOne.queryOptions({ id: projectId })
   );
-  void queryClient.prefetchQuery(
+  await queryClient.prefetchQuery(
     trpc.messages.getMany.queryOptions({ projectId })
   );
 

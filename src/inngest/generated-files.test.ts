@@ -26,6 +26,22 @@ test('rejects an empty generated file batch', () => {
   );
 });
 
+test('rejects configuration, unsupported roots, backslashes, and oversized files', () => {
+  for (const path of ['package.json', 'styles/site.tsx', 'app\\page.tsx', 'app/globals.css']) {
+    assert.equal(
+      generatedFilesInputSchema.safeParse({ files: [{ path, content: 'content' }] }).success,
+      false,
+      `expected ${path} to fail`,
+    );
+  }
+  assert.equal(
+    generatedFilesInputSchema.safeParse({
+      files: [{ path: 'app/page.tsx', content: 'x'.repeat(200_001) }],
+    }).success,
+    false,
+  );
+});
+
 test('preserves successful writes and reports a failed path to the agent', async () => {
   const writes: string[] = [];
   const sandbox = {

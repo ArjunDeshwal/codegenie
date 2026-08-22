@@ -7,6 +7,7 @@ import { ArrowUpRightIcon, BoxIcon, Clock3Icon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTRPC } from "@/trpc/client";
 
@@ -67,10 +68,13 @@ const ProjectsList = () => {
             <h3 className="mt-5 truncate text-sm font-semibold tracking-tight">
               {project.name}
             </h3>
-            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Clock3Icon className="size-3" />
-              Updated {formatDistanceToNow(project.updatedAt, { addSuffix: true })}
-            </p>
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <p className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
+                <Clock3Icon className="size-3 shrink-0" />
+                Updated {formatDistanceToNow(project.updatedAt, { addSuffix: true })}
+              </p>
+              {project.activeGeneration && <Badge variant="outline" className="shrink-0 font-mono text-[8px] uppercase">Building</Badge>}
+            </div>
           </Link>
         ))}
       </div>

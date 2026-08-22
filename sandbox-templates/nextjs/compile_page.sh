@@ -4,17 +4,18 @@
 # and makes sure the Next.js app is (1) running and (2) the `/` page is compiled
 function ping_server() {
 	counter=0
-	response=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000")
-	while [[ ${response} -ne 200 ]]; do
-	  let counter++
-	  if  (( counter % 20 == 0 )); then
-        echo "Waiting for server to start..."
-        sleep 0.1
-      fi
-
-	  response=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000")
+	while (( counter < 60 )); do
+	  response=$(curl --silent --max-time 2 -o /dev/null -w "%{http_code}" "http://localhost:3000" || true)
+	  if [[ ${response} == 200 ]]; then
+	    echo "Preview server is ready."
+	    return 0
+	  fi
+	  counter=$((counter + 1))
+	  sleep 1
 	done
+	echo "Preview server did not become ready within 60 seconds." >&2
+	return 1
 }
 
 ping_server &
-cd /home/user && npx next dev --turbopack
+cd /home/user && exec npx next dev --turbopack --hostname 0.0.0.0 --port 3000

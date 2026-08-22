@@ -11,17 +11,17 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   {
-    ignores: ["**/generated/*"],
+    ignores: [".next/**", "node_modules/**", "output/**", "tmp/**", "src/generated/**", "next-env.d.ts"],
   },
   ...compat.config({
     extends: ["next/core-web-vitals", "next/typescript"],
     plugins: ["@typescript-eslint"],
     rules: {
-      "no-unused-vars": "warn",
-      "@typescript-eslint/no-unused-vars": ["warn"],
-      "@typescript-eslint/no-explicit-any": ["warn"],
-      "@typescript-eslint/no-non-null-asserted-optional-chain": ["warn"],
-      "@typescript-eslint/no-unused-expressions": ["warn"],
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { args: "none", varsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-non-null-asserted-optional-chain": "error",
+      "@typescript-eslint/no-unused-expressions": "error",
     },
   }),
 ];

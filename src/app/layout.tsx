@@ -1,5 +1,4 @@
 import { ClerkProvider } from "@clerk/nextjs";
-import { shadcn } from "@clerk/ui/themes";
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -48,7 +47,6 @@ export default function RootLayout({
       >
         <ClerkProvider
           appearance={{
-            baseTheme: shadcn,
             variables: {
               colorPrimary: "#2f7d5a",
             },
