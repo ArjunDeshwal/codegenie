@@ -18,7 +18,7 @@ const ProjectForm = () => {
   const clerk = useClerk();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const inspectionAvailable = process.env.NEXT_PUBLIC_WEBSITE_INSPECTION_ENABLED === "true";
+  const inspectionAvailable = process.env.NEXT_PUBLIC_WEBSITE_INSPECTION_ENABLED !== "false";
   let referenceUrl: string | null = null;
   try { referenceUrl = inspectionAvailable ? extractReferenceUrl(value) : null; } catch { referenceUrl = null; }
   const createProject = useMutation(trpc.projects.create.mutationOptions({

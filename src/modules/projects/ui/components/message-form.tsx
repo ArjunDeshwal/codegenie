@@ -19,7 +19,7 @@ const MessageForm = ({ projectId, disabled }: MessageFormProps) => {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data: usage } = useQuery(trpc.usage.status.queryOptions());
-  const inspectionAvailable = process.env.NEXT_PUBLIC_WEBSITE_INSPECTION_ENABLED === "true";
+  const inspectionAvailable = process.env.NEXT_PUBLIC_WEBSITE_INSPECTION_ENABLED !== "false";
   let referenceUrl: string | null = null;
   try { referenceUrl = inspectionAvailable ? extractReferenceUrl(value) : null; } catch { referenceUrl = null; }
   const createMessage = useMutation(trpc.messages.create.mutationOptions({

@@ -52,4 +52,4 @@ export const CURRENT_SANDBOX_TEMPLATE =
   process.env.E2B_TEMPLATE || "codegenie-nextjs-v2";
 
 export const websiteInspectionEnabled = () =>
-  process.env.WEBSITE_INSPECTION_ENABLED === "true";
+  process.env.WEBSITE_INSPECTION_ENABLED !== "false";

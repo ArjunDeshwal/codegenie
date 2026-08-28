@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "NODE_OPTIONS=--no-experimental-webstorage next dev --turbopack -p 3008",
-    "build": "NODE_OPTIONS=--no-experimental-webstorage next build",
+    "build": "node scripts/migrate-on-vercel.mjs && NODE_OPTIONS=--no-experimental-webstorage next build",
     "start": "NODE_OPTIONS=--no-experimental-webstorage next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",

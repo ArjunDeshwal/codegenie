@@ -102,9 +102,11 @@ const capture = async (url, viewport, allowLocal = false) => {
     acceptDownloads: false,
     userAgent: "CodeGenieReferenceBot/1.0",
   });
-  context.on("page", (popup) => popup.close().catch(() => undefined));
   await applySafeRouting(context, allowLocal);
   const page = await context.newPage();
+  context.on("page", (popup) => {
+    if (popup !== page) popup.close().catch(() => undefined);
+  });
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
     await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}" }).catch(() => undefined);
