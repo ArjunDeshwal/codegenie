@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
+import { useQuery } from "@tanstack/react-query";
 import {
   CodeIcon,
   CrownIcon,
@@ -24,6 +25,7 @@ import { UserControl } from "@/components/user-control";
 import { Fragment } from "@/generated/prisma";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { FileCollection } from "@/types";
+import { useTRPC } from "@/trpc/client";
 import { FragmentWeb } from "../components/fragment-web";
 import { MessagesContainer } from "../components/messages-container";
 import { ProjectHeader } from "../components/project-header";
@@ -63,6 +65,9 @@ const Output = ({
 const ProjectView = ({ projectId }: ProjectViewProps) => {
   const { has } = useAuth();
   const hasProAccess = has?.({ plan: "pro" });
+  const trpc = useTRPC();
+  const { data: usage } = useQuery(trpc.usage.status.queryOptions());
+  const hasUnlimitedAccess = usage?.isUnlimited === true;
   const isMobile = useIsMobile();
   const [activeFragment, setActiveFragment] = useState<Fragment | null>(null);
   const [outputTab, setOutputTab] = useState<"preview" | "code">("preview");
@@ -160,7 +165,7 @@ const ProjectView = ({ projectId }: ProjectViewProps) => {
                     Build ready
                   </span>
                 )}
-                {!hasProAccess && (
+                {!hasProAccess && !hasUnlimitedAccess && (
                   <Button asChild size="xs" variant="outline">
                     <Link href="/pricing">
                       <CrownIcon /> Upgrade

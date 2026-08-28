@@ -44,7 +44,13 @@ const MessageForm = ({ projectId, disabled }: MessageFormProps) => {
 
   return (
     <div>
-      {usage && <Usage points={usage.remainingPoints} msBeforeNext={usage.msBeforeNext} />}
+      {usage && (
+        <Usage
+          points={usage.remainingPoints}
+          msBeforeNext={usage.msBeforeNext}
+          isUnlimited={usage.isUnlimited}
+        />
+      )}
       <form onSubmit={submit} className="overflow-hidden rounded-xl border border-foreground/15 bg-card shadow-sm dark:border-white/12">
         <textarea
           value={value}

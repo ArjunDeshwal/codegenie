@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import prisma from "@/lib/prisma";
 import { createGenerationForProject, dispatchGeneration } from "@/lib/generations";
+import { hasUnlimitedCredits } from "@/lib/usage";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { TRPCError } from "@trpc/server";
 
@@ -64,6 +65,7 @@ export const messagesRouter = createTRPCRouter({
         clientRequestId: input.clientRequestId || crypto.randomUUID(),
         userId: ctx.auth.userId,
         isPro: ctx.auth.has({ plan: "pro" }),
+        isUnlimited: await hasUnlimitedCredits(),
       });
       await dispatchGeneration(generation.id, existingProject.id);
       return generation.promptMessage;

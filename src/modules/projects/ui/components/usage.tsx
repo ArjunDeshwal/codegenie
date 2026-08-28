@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
 interface UsageProps {
-  points: number;
+  points: number | null;
   msBeforeNext: number;
+  isUnlimited: boolean;
 }
 
-const Usage = ({ points }: UsageProps) => {
+const Usage = ({ points, isUnlimited }: UsageProps) => {
   const { has } = useAuth();
   const hasProAccess = has?.({ plan: 'pro' });
 
@@ -18,11 +19,13 @@ const Usage = ({ points }: UsageProps) => {
       <div className="flex items-center gap-x-2">
         <div>
           <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
-            {points} {hasProAccess ? '' : 'free'} credits available
+            {isUnlimited
+              ? 'Unlimited tester credits'
+              : `${points} ${hasProAccess ? '' : 'free'} credits available`}
           </p>
         </div>
 
-        {!hasProAccess && (
+        {!hasProAccess && !isUnlimited && (
           <Button asChild size="xs" variant="ghost" className="h-6 text-[10px] text-primary">
             <Link href="/pricing">
               <CrownIcon className="size-3" /> Upgrade

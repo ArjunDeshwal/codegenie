@@ -8,6 +8,7 @@ test("generation worker contract includes concurrency, cancellation, and termina
   assert.match(source, /cancelOn:/);
   assert.match(source, /onFailure:/);
   assert.match(source, /failGeneration/);
+  assert.match(source, /claimGenerationStart/);
 });
 
 test("dispatch events contain identifiers rather than prompt content", () => {
@@ -22,4 +23,25 @@ test("the additive migration preserves and classifies historical prompts", () =>
   assert.match(migration, /LEGACY_ORPHANED/);
   assert.match(migration, /INSERT INTO "Generation"/);
   assert.match(migration, /Project_activeGenerationId_key/);
+});
+
+test("stale queued generations fail clearly and refund their reservation", () => {
+  const source = readFileSync("src/lib/generations.ts", "utf8");
+  assert.match(source, /reconcileStaleQueuedGenerations/);
+  assert.match(source, /WORKER_UNAVAILABLE/);
+  assert.match(source, /refundReservation/);
+  assert.match(source, /activeGenerationId: null/);
+});
+
+test("the Inngest route serves the current generation and cancellation workers", () => {
+  const source = readFileSync("src/app/api/inngest/route.ts", "utf8");
+  assert.match(source, /codeAgentFunction/);
+  assert.match(source, /cancelGenerationFunction/);
+});
+
+test("unlimited credits are controlled by Clerk private metadata", () => {
+  const usageSource = readFileSync("src/lib/usage.ts", "utf8");
+  const accessSource = readFileSync("src/lib/credit-access.ts", "utf8");
+  assert.match(usageSource, /privateMetadata/);
+  assert.match(accessSource, /codegenieUnlimitedCredits/);
 });

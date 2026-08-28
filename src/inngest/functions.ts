@@ -7,7 +7,13 @@ import { z } from "zod";
 
 import { SANDBOX_TIMEOUT_IN_MS } from "@/constants";
 import { FailureCode, GenerationStage } from "@/generated/prisma";
-import { failGeneration, FALLBACK_MODEL, PRIMARY_MODEL, updateGenerationStage } from "@/lib/generations";
+import {
+  claimGenerationStart,
+  failGeneration,
+  FALLBACK_MODEL,
+  PRIMARY_MODEL,
+  updateGenerationStage,
+} from "@/lib/generations";
 import prisma from "@/lib/prisma";
 import { PROMPT } from "@/prompt";
 import type { FileCollection } from "@/types";
@@ -199,9 +205,9 @@ export const codeAgentFunction = inngest.createFunction(
     }));
     if (!generation || ["CANCELLED", "SUCCEEDED", "FAILED"].includes(generation.status)) return;
 
-    await step.run("mark-preparing", () => updateGenerationStage(generationId, GenerationStage.PREPARING, {
-      startedAt: new Date(), attemptCount: { increment: 1 },
-    }));
+    const claimed = await step.run("mark-preparing", () =>
+      claimGenerationStart(generationId));
+    if (!claimed) return;
     const sandboxId = await step.run("create-sandbox", async () => {
       const sandbox = await Sandbox.create("codegenie-nextjs");
       await sandbox.setTimeout(SANDBOX_TIMEOUT_IN_MS);

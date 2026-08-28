@@ -1,9 +1,16 @@
-import { auth } from '@clerk/nextjs/server';
+import { auth, currentUser } from '@clerk/nextjs/server';
 
+import { hasUnlimitedCreditMetadata } from './credit-access';
 import prisma from './prisma';
 
 const FREE_POINTS = 1;
 const PRO_POINTS = 100;
+
+export async function hasUnlimitedCredits() {
+  const user = await currentUser();
+  return hasUnlimitedCreditMetadata(user?.privateMetadata);
+}
+
 export async function getUsageStatus() {
   const { userId, has } = await auth();
 
@@ -11,12 +18,16 @@ export async function getUsageStatus() {
     throw new Error('User not autheticated');
   }
 
-  if (process.env.NODE_ENV === 'development') {
+  const isUnlimited =
+    process.env.NODE_ENV === 'development' || (await hasUnlimitedCredits());
+
+  if (isUnlimited) {
     return {
-      remainingPoints: 999,
+      remainingPoints: null,
       msBeforeNext: 0,
       consumedPoints: 0,
       isFirstInDuration: true,
+      isUnlimited: true,
     };
   }
 
@@ -30,5 +41,6 @@ export async function getUsageStatus() {
     msBeforeNext: expired ? 0 : Math.max(0, result.expire!.getTime() - now),
     consumedPoints,
     isFirstInDuration: !result || expired,
+    isUnlimited: false,
   };
 }

@@ -8,6 +8,7 @@ import {
   Prisma,
 } from "@/generated/prisma";
 import { inngest } from "@/inngest/client";
+import { GENERATION_QUEUE_TIMEOUT_MS } from "@/lib/generation-state";
 import prisma from "@/lib/prisma";
 
 export const PRIMARY_MODEL =
@@ -25,8 +26,9 @@ const reserveCredit = async (
   tx: Db,
   userId: string,
   isPro: boolean,
+  isUnlimited: boolean,
 ) => {
-  if (process.env.NODE_ENV === "development") return 0;
+  if (process.env.NODE_ENV === "development" || isUnlimited) return 0;
 
   const now = new Date();
   const allowance = isPro ? PRO_POINTS : FREE_POINTS;
@@ -68,12 +70,14 @@ export const createGenerationForProject = async ({
   clientRequestId,
   userId,
   isPro,
+  isUnlimited,
 }: {
   projectId: string;
   prompt: string;
   clientRequestId: string;
   userId: string;
   isPro: boolean;
+  isUnlimited: boolean;
 }) => {
   const duplicate = await prisma.generation.findUnique({
     where: { userId_clientRequestId: { userId, clientRequestId } },
@@ -105,7 +109,7 @@ export const createGenerationForProject = async ({
         });
       }
 
-      const points = await reserveCredit(tx, userId, isPro);
+      const points = await reserveCredit(tx, userId, isPro, isUnlimited);
       const promptMessage = await tx.message.create({
         data: { projectId, content: prompt, role: "USER", type: "RESULT" },
       });
@@ -146,12 +150,14 @@ export const createProjectWithGeneration = async ({
   clientRequestId,
   userId,
   isPro,
+  isUnlimited,
 }: {
   name: string;
   prompt: string;
   clientRequestId: string;
   userId: string;
   isPro: boolean;
+  isUnlimited: boolean;
 }) => {
   const duplicate = await prisma.generation.findUnique({
     where: { userId_clientRequestId: { userId, clientRequestId } },
@@ -161,7 +167,7 @@ export const createProjectWithGeneration = async ({
 
   return prisma.$transaction(
     async (tx) => {
-      const points = await reserveCredit(tx, userId, isPro);
+      const points = await reserveCredit(tx, userId, isPro, isUnlimited);
       const project = await tx.project.create({ data: { name, userId } });
       const promptMessage = await tx.message.create({
         data: { projectId: project.id, content: prompt, role: "USER", type: "RESULT" },
@@ -258,12 +264,96 @@ export const failGeneration = async (
     return updated;
   });
 
+export const reconcileStaleQueuedGenerations = async ({
+  userId,
+  projectId,
+  now = new Date(),
+}: {
+  userId?: string;
+  projectId?: string;
+  now?: Date;
+} = {}) => {
+  const cutoff = new Date(now.getTime() - GENERATION_QUEUE_TIMEOUT_MS);
+  const stale = await prisma.generation.findMany({
+    where: {
+      ...(userId ? { userId } : {}),
+      ...(projectId ? { projectId } : {}),
+      status: GenerationStatus.QUEUED,
+      stage: GenerationStage.QUEUED,
+      createdAt: { lte: cutoff },
+    },
+    select: { id: true, projectId: true },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+  });
+
+  if (stale.length === 0) return 0;
+
+  let reconciled = 0;
+  for (const generation of stale) {
+    const didReconcile = await prisma.$transaction(
+      async (tx) => {
+        const claimed = await tx.generation.updateMany({
+          where: {
+            id: generation.id,
+            status: GenerationStatus.QUEUED,
+            stage: GenerationStage.QUEUED,
+            createdAt: { lte: cutoff },
+          },
+          data: {
+            status: GenerationStatus.FAILED,
+            failureCode: FailureCode.WORKER_UNAVAILABLE,
+            failureMessage:
+              "A generation worker did not start within two minutes. Your credit was refunded; retry the build.",
+            finishedAt: now,
+          },
+        });
+        if (claimed.count !== 1) return false;
+
+        await refundReservation(tx, generation.id);
+        await tx.project.updateMany({
+          where: {
+            id: generation.projectId,
+            activeGenerationId: generation.id,
+          },
+          data: { activeGenerationId: null, updatedAt: now },
+        });
+        return true;
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 10_000,
+        timeout: 30_000,
+      },
+    );
+    if (didReconcile) reconciled += 1;
+  }
+  return reconciled;
+};
+
+export const claimGenerationStart = async (generationId: string) => {
+  const claimed = await prisma.generation.updateMany({
+    where: {
+      id: generationId,
+      status: GenerationStatus.QUEUED,
+      stage: GenerationStage.QUEUED,
+    },
+    data: {
+      status: GenerationStatus.RUNNING,
+      stage: GenerationStage.PREPARING,
+      startedAt: new Date(),
+      attemptCount: { increment: 1 },
+    },
+  });
+  return claimed.count === 1;
+};
+
 export const updateGenerationStage = (
   generationId: string,
   stage: GenerationStage,
   data: Prisma.GenerationUpdateInput = {},
 ) =>
-  prisma.generation.update({
-    where: { id: generationId },
-    data: { status: "RUNNING", stage, ...data },
+  prisma.generation.updateMany({
+    where: { id: generationId, status: GenerationStatus.RUNNING },
+    data: { stage, ...data },
   });

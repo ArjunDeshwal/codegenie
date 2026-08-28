@@ -3,7 +3,12 @@ import { generateSlug } from "random-word-slugs";
 import { z } from "zod";
 
 import prisma from "@/lib/prisma";
-import { createProjectWithGeneration, dispatchGeneration } from "@/lib/generations";
+import {
+  createProjectWithGeneration,
+  dispatchGeneration,
+  reconcileStaleQueuedGenerations,
+} from "@/lib/generations";
+import { hasUnlimitedCredits } from "@/lib/usage";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 export const projectsRouter = createTRPCRouter({
@@ -31,6 +36,7 @@ export const projectsRouter = createTRPCRouter({
       return existingProject;
     }),
   getMany: protectedProcedure.query(async ({ ctx }) => {
+    await reconcileStaleQueuedGenerations({ userId: ctx.auth.userId });
     const projects = await prisma.project.findMany({
       where: {
         userId: ctx.auth.userId,
@@ -58,6 +64,7 @@ export const projectsRouter = createTRPCRouter({
       const created = await createProjectWithGeneration({
         userId: ctx.auth.userId,
         isPro: ctx.auth.has({ plan: "pro" }),
+        isUnlimited: await hasUnlimitedCredits(),
         name: generateSlug(2, { format: "kebab" }),
         prompt: input.value,
         clientRequestId: input.clientRequestId || crypto.randomUUID(),

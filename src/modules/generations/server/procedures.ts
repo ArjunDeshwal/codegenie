@@ -2,8 +2,14 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { inngest } from "@/inngest/client";
-import { createGenerationForProject, dispatchGeneration, failGeneration } from "@/lib/generations";
+import {
+  createGenerationForProject,
+  dispatchGeneration,
+  failGeneration,
+  reconcileStaleQueuedGenerations,
+} from "@/lib/generations";
 import prisma from "@/lib/prisma";
+import { hasUnlimitedCredits } from "@/lib/usage";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 const generationInput = z.object({ generationId: z.string().uuid() });
@@ -11,14 +17,20 @@ const generationInput = z.object({ generationId: z.string().uuid() });
 export const generationsRouter = createTRPCRouter({
   getActive: protectedProcedure
     .input(z.object({ projectId: z.string().uuid() }))
-    .query(({ input, ctx }) => prisma.generation.findFirst({
-      where: {
+    .query(async ({ input, ctx }) => {
+      await reconcileStaleQueuedGenerations({
+        userId: ctx.auth.userId,
         projectId: input.projectId,
-        project: { userId: ctx.auth.userId },
-        status: { in: ["QUEUED", "RUNNING", "CANCEL_REQUESTED"] },
-      },
-      orderBy: { createdAt: "desc" },
-    })),
+      });
+      return prisma.generation.findFirst({
+        where: {
+          projectId: input.projectId,
+          project: { userId: ctx.auth.userId },
+          status: { in: ["QUEUED", "RUNNING", "CANCEL_REQUESTED"] },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }),
   cancel: protectedProcedure.input(generationInput).mutation(async ({ input, ctx }) => {
     const generation = await prisma.generation.findFirst({
       where: { id: input.generationId, userId: ctx.auth.userId },
@@ -50,6 +62,7 @@ export const generationsRouter = createTRPCRouter({
         clientRequestId: input.clientRequestId,
         userId: ctx.auth.userId,
         isPro: ctx.auth.has({ plan: "pro" }),
+        isUnlimited: await hasUnlimitedCredits(),
       });
       await dispatchGeneration(generation.id, generation.projectId);
       return generation;
