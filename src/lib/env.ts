@@ -6,6 +6,8 @@ const serverSchema = z.object({
   INNGEST_EVENT_KEY: z.string().min(1),
   INNGEST_SIGNING_KEY: z.string().min(1),
   E2B_API_KEY: z.string().min(1),
+  E2B_TEMPLATE: z.string().min(1).default("codegenie-nextjs-v2"),
+  WEBSITE_INSPECTION_ENABLED: z.enum(["true", "false"]).default("true"),
   TOKENROUTER_API_KEY: z.string().min(1),
   TOKENROUTER_BASE_URL: z.string().url().default("https://api.tokenrouter.com/v1/"),
   TOKENROUTER_PRIMARY_MODEL: z.string().min(1).default("qwen/qwen3-coder-next"),

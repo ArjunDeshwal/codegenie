@@ -1,8 +1,8 @@
 # You can use most Debian-based base images
 FROM node:22-slim
 
-# Install curl
-RUN apt-get update && apt-get install -y curl && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install curl and a sandbox-local browser for public reference inspection.
+RUN apt-get update && apt-get install -y curl chromium && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY compile_page.sh /compile_page.sh
 RUN chmod +x /compile_page.sh
@@ -22,11 +22,15 @@ RUN npx --yes shadcn@4.8.3 add --yes \
     sidebar skeleton slider sonner spinner switch table tabs textarea toggle \
     toggle-group tooltip
 RUN npm install tw-animate-css clsx tailwind-merge
+RUN npm install playwright-core@1.55.0 ipaddr.js@1.9.1
 
 # Move the Nextjs app to the home directory and remove the nextjs-app directory
 RUN mv /home/user/nextjs-app/* /home/user/ && rm -rf /home/user/nextjs-app
 
 WORKDIR /home/user
+
+RUN mkdir -p /home/user/.codegenie
+COPY inspect-reference.mjs /home/user/.codegenie/inspect-reference.mjs
 
 # shadcn 2.6 can generate components that import this helper without creating it.
 RUN mkdir -p /home/user/lib && \

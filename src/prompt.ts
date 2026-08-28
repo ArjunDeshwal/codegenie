@@ -93,6 +93,8 @@ Default visual language:
 - Do not use local or external image URLs — instead rely on emojis and divs with proper aspect ratios (aspect-video, aspect-square, etc.) and color placeholders (e.g. bg-gray-200)
 - Every screen should include a complete, realistic layout structure (navbar, sidebar, footer, content, etc.) — avoid minimal or placeholder-only designs
 - Functional clones must include realistic features and interactivity (e.g. drag-and-drop, add/edit/delete, toggle states, localStorage if helpful)
+- When a REFERENCE BRIEF is provided, implement every listed route and closely follow its hierarchy, layout metrics, visual tokens, controls, and responsive behavior.
+- Reference builds must be original recreations: never copy source code, logos, branded copy, or source asset URLs. Use original copy and locally rendered placeholders.
 - Prefer minimal, working features over static or hardcoded content
 - Reuse and structure components modularly — split large screens into smaller files (e.g., Column.tsx, TaskCard.tsx, etc.) and import them
 

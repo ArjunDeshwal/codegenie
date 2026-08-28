@@ -5,8 +5,13 @@ import * as Sentry from "@sentry/nextjs";
 import { createAgent, createNetwork, createState, createTool, type Message, openai, type Tool } from "@inngest/agent-kit";
 import { z } from "zod";
 
-import { SANDBOX_TIMEOUT_IN_MS } from "@/constants";
-import { FailureCode, GenerationStage } from "@/generated/prisma";
+import {
+  CURRENT_SANDBOX_TEMPLATE,
+  LEGACY_SANDBOX_TEMPLATE,
+  SANDBOX_TIMEOUT_IN_MS,
+  websiteInspectionEnabled,
+} from "@/constants";
+import { FailureCode, GenerationStage, Prisma } from "@/generated/prisma";
 import {
   claimGenerationStart,
   failGeneration,
@@ -15,6 +20,16 @@ import {
   updateGenerationStage,
 } from "@/lib/generations";
 import prisma from "@/lib/prisma";
+import {
+  buildReferenceContext,
+  compareWebsiteInspections,
+  inspectGeneratedRoutes,
+  inspectWebsite,
+  websiteInspectionHash,
+  websiteInspectionResultSchema,
+  type WebsiteInspectionResult,
+  type WebsiteQualityReport,
+} from "@/lib/website-inspection";
 import { PROMPT } from "@/prompt";
 import type { FileCollection } from "@/types";
 import { generatedFilesInputSchema, generatedFilesToolMessage, validateReadPaths, writeGeneratedFiles } from "./generated-files";
@@ -73,7 +88,7 @@ const collectArtifactFiles = async (sandbox: Sandbox, overrides: FileCollection)
   return collected;
 };
 
-const makeAgent = (sandboxId: string, selectedModel: string) => createAgent<AgentState>({
+const makeAgent = (sandboxId: string, selectedModel: string, requiredRoutes: string[]) => createAgent<AgentState>({
   name: `code-agent-${selectedModel.replace(/[^a-z0-9]/gi, "-")}`,
   description: "A constrained frontend coding agent",
   system: PROMPT,
@@ -144,7 +159,7 @@ const makeAgent = (sandboxId: string, selectedModel: string) => createAgent<Agen
         }
         network.state.data.operationCount += 1;
         const result = await step?.run(`validate-app-${network.state.data.operationCount}`, async () =>
-          validateSandboxPreview(await getSandbox(sandboxId)));
+          validateSandboxPreview(await getSandbox(sandboxId), { routes: requiredRoutes }));
         network.state.data.previewValidated = Boolean(result?.ok);
         return result ? validationMessage(result) : "VALIDATION_ERROR: Validation did not run.";
       },
@@ -165,14 +180,15 @@ const makeAgent = (sandboxId: string, selectedModel: string) => createAgent<Agen
   ],
 });
 
-const runAgent = async ({ sandboxId, prompt, selectedModel, state, maxIter }: {
+const runAgent = async ({ sandboxId, prompt, selectedModel, state, maxIter, requiredRoutes }: {
   sandboxId: string;
   prompt: string;
   selectedModel: string;
   state: ReturnType<typeof createState<AgentState>>;
   maxIter: number;
+  requiredRoutes: string[];
 }) => {
-  const agent = makeAgent(sandboxId, selectedModel);
+  const agent = makeAgent(sandboxId, selectedModel, requiredRoutes);
   const network = createNetwork<AgentState>({
     name: `generation-${selectedModel}`,
     agents: [agent],
@@ -212,16 +228,71 @@ export const codeAgentFunction = inngest.createFunction(
       include: { promptMessage: true, baseFragment: true },
     }));
     if (!generation || ["CANCELLED", "SUCCEEDED", "FAILED"].includes(generation.status)) return;
+    const websiteInspection = websiteInspectionEnabled()
+      ? await step.run("load-website-inspection", () => prisma.websiteInspection.findUnique({ where: { generationId } }))
+      : null;
 
     const claimed = await step.run("mark-preparing", () =>
       claimGenerationStart(generationId));
     if (!claimed) return;
     const sandboxId = await step.run("create-sandbox", async () => {
-      const sandbox = await Sandbox.create("codegenie-nextjs");
+      const sandbox = await Sandbox.create(
+        websiteInspection ? CURRENT_SANDBOX_TEMPLATE : LEGACY_SANDBOX_TEMPLATE,
+      );
       await sandbox.setTimeout(SANDBOX_TIMEOUT_IN_MS);
       await prisma.generation.update({ where: { id: generationId }, data: { sandboxId: sandbox.sandboxId } });
       return sandbox.sandboxId;
     });
+
+    let referenceResult: WebsiteInspectionResult | null = null;
+    if (websiteInspection) {
+      if (
+        ["READY", "PARTIAL"].includes(websiteInspection.status) &&
+        websiteInspection.pages
+      ) {
+        referenceResult = websiteInspectionResultSchema.parse(websiteInspection.pages);
+      } else {
+        try {
+          referenceResult = await step.run("inspect-reference", async () => {
+            await updateGenerationStage(generationId, GenerationStage.INSPECTING);
+            const result = await inspectWebsite(await getSandbox(sandboxId), websiteInspection.seedUrl);
+            await prisma.websiteInspection.update({
+              where: { generationId },
+              data: {
+                canonicalOrigin: result.canonicalOrigin,
+                status: result.failures.length > 0 ? "PARTIAL" : "READY",
+                pages: result as unknown as Prisma.InputJsonValue,
+                contentHash: websiteInspectionHash(result),
+                pageCount: result.pages.length,
+                pageRoutes: result.pages.map((page) => page.route),
+                failureMessage: result.failures.join(" ").slice(0, 500) || null,
+              },
+            });
+            return result;
+          });
+        } catch {
+          await step.run("fail-reference-inspection", async () => {
+            await prisma.websiteInspection.update({
+              where: { generationId },
+              data: {
+                status: "FAILED",
+                qualityStatus: "UNAVAILABLE",
+                failureMessage: "The public website could not be inspected safely.",
+              },
+            });
+            await killSandbox(sandboxId);
+            await failGeneration(
+              generationId,
+              FailureCode.REFERENCE_UNAVAILABLE,
+              "The referenced website could not be inspected. Your credit was refunded.",
+            );
+          });
+          return;
+        }
+      }
+    }
+
+    const requiredRoutes = referenceResult?.pages.map((page) => page.route) || ["/"];
 
     const baseFiles = (generation.baseFragment?.files || {}) as FileCollection;
     if (Object.keys(baseFiles).length > 0) {
@@ -246,11 +317,21 @@ export const codeAgentFunction = inngest.createFunction(
     }, { messages: history });
 
     await step.run("mark-generating", () => updateGenerationStage(generationId, GenerationStage.GENERATING));
-    await runAgent({ sandboxId, prompt: generation.promptMessage.content, selectedModel: generation.primaryModel || PRIMARY_MODEL, state, maxIter: 10 });
+    const agentPrompt = referenceResult
+      ? `USER REQUEST:\n${generation.promptMessage.content}\n\nREFERENCE BRIEF:\n${buildReferenceContext(referenceResult)}\n\nCreate every required route: ${requiredRoutes.join(", ")}.`
+      : generation.promptMessage.content;
+    await runAgent({
+      sandboxId,
+      prompt: agentPrompt,
+      selectedModel: generation.primaryModel || PRIMARY_MODEL,
+      state,
+      maxIter: 10,
+      requiredRoutes,
+    });
     await step.run("mark-validating", () => updateGenerationStage(generationId, GenerationStage.VALIDATING));
     let validation = await step.run("final-validation-primary", async () => {
       if (state.data.changedPaths.length === 0 || !state.data.files["app/page.tsx"]) return { ok: false, restarted: false, error: "No meaningful page artifact was generated." };
-      return validateSandboxPreview(await getSandbox(sandboxId));
+      return validateSandboxPreview(await getSandbox(sandboxId), { routes: requiredRoutes });
     });
 
     if ((!validation.ok || !state.data.summary) && generation.fallbackModel) {
@@ -260,9 +341,9 @@ export const codeAgentFunction = inngest.createFunction(
         sandboxId,
         prompt: `Finish or repair the current application. The primary model did not complete successfully: ${validation.error || "the structured completion was missing"}. Inspect existing files, make the minimum complete fix, validate, then call completeGeneration.`,
         selectedModel: generation.fallbackModel || FALLBACK_MODEL,
-        state, maxIter: 6,
+        state, maxIter: 6, requiredRoutes,
       });
-      validation = await step.run("final-validation-fallback", async () => validateSandboxPreview(await getSandbox(sandboxId)));
+      validation = await step.run("final-validation-fallback", async () => validateSandboxPreview(await getSandbox(sandboxId), { routes: requiredRoutes }));
     }
 
     const current = await prisma.generation.findUnique({ where: { id: generationId } });
@@ -275,6 +356,97 @@ export const codeAgentFunction = inngest.createFunction(
       await killSandbox(sandboxId);
       await failGeneration(generationId, FailureCode.VALIDATION_FAILED, `The generated app did not pass validation: ${(validation.error || "unknown error").slice(0, 500)}`);
       return;
+    }
+
+    let qualityReport: WebsiteQualityReport | null = null;
+    if (referenceResult) {
+      try {
+        qualityReport = await step.run("compare-reference", async () => {
+          await updateGenerationStage(generationId, GenerationStage.COMPARING);
+          const generated = await inspectGeneratedRoutes(await getSandbox(sandboxId), requiredRoutes);
+          const report = compareWebsiteInspections(referenceResult!, generated);
+          await prisma.websiteInspection.update({
+            where: { generationId },
+            data: {
+              qualityStatus: report.score >= 80 ? "PASSED" : "NEEDS_REFINEMENT",
+              qualityScore: report.score,
+              qualityReport: report as unknown as Prisma.InputJsonValue,
+            },
+          });
+          return report;
+        });
+      } catch {
+        await step.run("mark-comparison-unavailable", () => prisma.websiteInspection.update({
+          where: { generationId },
+          data: { qualityStatus: "UNAVAILABLE" },
+        }));
+      }
+
+      if (qualityReport && qualityReport.score < 80 && generation.fallbackModel) {
+        const beforeRepair = {
+          title: state.data.title,
+          summary: state.data.summary,
+          files: { ...state.data.files },
+          changedPaths: [...state.data.changedPaths],
+        };
+        await step.run("mark-quality-repairing", async () => {
+          await updateGenerationStage(generationId, GenerationStage.REPAIRING, { fallbackUsed: true });
+          await prisma.websiteInspection.update({
+            where: { generationId },
+            data: { qualityRepairUsed: true },
+          });
+        });
+        state.data.title = "";
+        state.data.summary = "";
+        state.data.previewValidated = false;
+        await runAgent({
+          sandboxId,
+          prompt: `Improve reference alignment while preserving working routes. Fix these differences: ${qualityReport.differences.join(" ") || "match the reference hierarchy, styling, controls, and responsive structure more closely"}. Keep the recreation original, validate every route, then call completeGeneration.`,
+          selectedModel: generation.fallbackModel || FALLBACK_MODEL,
+          state,
+          maxIter: 4,
+          requiredRoutes,
+        });
+        const repairedValidation = await step.run("validate-quality-repair", async () =>
+          validateSandboxPreview(await getSandbox(sandboxId), { routes: requiredRoutes }));
+        if (!repairedValidation.ok || !state.data.summary) {
+          await step.run("restore-before-quality-repair", async () => {
+            const sandbox = await getSandbox(sandboxId);
+            for (const path of Object.keys(state.data.files)) {
+              if (!(path in beforeRepair.files)) {
+                try { await sandbox.files.remove(path); } catch { /* File was already absent. */ }
+              }
+            }
+            for (const [path, content] of Object.entries(beforeRepair.files)) await sandbox.files.write(path, content);
+          });
+          state.data.title = beforeRepair.title;
+          state.data.summary = beforeRepair.summary;
+          state.data.files = beforeRepair.files;
+          state.data.changedPaths = beforeRepair.changedPaths;
+          state.data.previewValidated = true;
+        } else {
+          try {
+            qualityReport = await step.run("compare-quality-repair", async () => {
+              const generated = await inspectGeneratedRoutes(await getSandbox(sandboxId), requiredRoutes);
+              const report = compareWebsiteInspections(referenceResult!, generated);
+              await prisma.websiteInspection.update({
+                where: { generationId },
+                data: {
+                  qualityStatus: report.score >= 80 ? "PASSED" : "NEEDS_REFINEMENT",
+                  qualityScore: report.score,
+                  qualityReport: report as unknown as Prisma.InputJsonValue,
+                },
+              });
+              return report;
+            });
+          } catch {
+            await step.run("mark-repair-comparison-unavailable", () => prisma.websiteInspection.update({
+              where: { generationId },
+              data: { qualityStatus: "UNAVAILABLE" },
+            }));
+          }
+        }
+      }
     }
 
     await step.run("save-artifact", async () => {
@@ -291,7 +463,7 @@ export const codeAgentFunction = inngest.createFunction(
             projectId: generation.projectId, content: state.data.summary, role: "ASSISTANT", type: "RESULT",
             fragment: { create: {
               sandboxUrl, title: state.data.title || "Generated App", files: artifactFiles,
-              templateVersion: "codegenie-nextjs-v1", checksum, byteSize: Buffer.byteLength(filesJson), isRestorable: true,
+              templateVersion: "codegenie-nextjs-v2", checksum, byteSize: Buffer.byteLength(filesJson), isRestorable: true,
               previewSessions: { create: { sandboxId, url: sandboxUrl, status: "READY", expiresAt } },
             } },
           }, include: { fragment: true },

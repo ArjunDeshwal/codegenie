@@ -3,12 +3,14 @@ import { generateSlug } from "random-word-slugs";
 import { z } from "zod";
 
 import prisma from "@/lib/prisma";
+import { websiteInspectionEnabled } from "@/constants";
 import {
   createProjectWithGeneration,
   dispatchGeneration,
   reconcileStaleQueuedGenerations,
 } from "@/lib/generations";
 import { hasUnlimitedCredits } from "@/lib/usage";
+import { extractReferenceUrl } from "@/lib/reference-url";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 export const projectsRouter = createTRPCRouter({
@@ -58,9 +60,22 @@ export const projectsRouter = createTRPCRouter({
           .min(1, { message: "Value is required" })
           .max(10_000, { message: "Value is too long" }),
         clientRequestId: z.string().uuid().optional(),
+        referenceUrl: z.string().url().max(2_048).nullable().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const inspectionEnabled = websiteInspectionEnabled();
+      let referenceUrl: string | null;
+      try {
+        referenceUrl = inspectionEnabled
+          ? extractReferenceUrl(input.value, input.referenceUrl)
+          : null;
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error instanceof Error ? error.message : "Invalid reference URL.",
+        });
+      }
       const created = await createProjectWithGeneration({
         userId: ctx.auth.userId,
         isPro: ctx.auth.has({ plan: "pro" }),
@@ -68,6 +83,7 @@ export const projectsRouter = createTRPCRouter({
         name: generateSlug(2, { format: "kebab" }),
         prompt: input.value,
         clientRequestId: input.clientRequestId || crypto.randomUUID(),
+        reference: inspectionEnabled && referenceUrl ? { seedUrl: referenceUrl } : null,
       });
       await dispatchGeneration(created.generation.id, created.project.id);
       return created;

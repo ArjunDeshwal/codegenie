@@ -7,6 +7,8 @@ import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
 import { useTRPC } from "@/trpc/client";
+import { ReferenceUrlChip } from "@/components/reference-url-chip";
+import { extractReferenceUrl, removeReferenceUrl } from "@/lib/reference-url";
 import { Usage } from "./usage";
 
 interface MessageFormProps { projectId: string; disabled?: boolean }
@@ -17,6 +19,9 @@ const MessageForm = ({ projectId, disabled }: MessageFormProps) => {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data: usage } = useQuery(trpc.usage.status.queryOptions());
+  const inspectionAvailable = process.env.NEXT_PUBLIC_WEBSITE_INSPECTION_ENABLED === "true";
+  let referenceUrl: string | null = null;
+  try { referenceUrl = inspectionAvailable ? extractReferenceUrl(value) : null; } catch { referenceUrl = null; }
   const createMessage = useMutation(trpc.messages.create.mutationOptions({
     onSuccess: () => {
       setValue("");
@@ -36,7 +41,7 @@ const MessageForm = ({ projectId, disabled }: MessageFormProps) => {
     event?.preventDefault();
     const prompt = value.trim();
     if (!prompt || disabled || createMessage.isPending) return;
-    createMessage.mutate({ value: prompt, projectId, clientRequestId: crypto.randomUUID() });
+    createMessage.mutate({ value: prompt, referenceUrl, projectId, clientRequestId: crypto.randomUUID() });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); }
@@ -62,6 +67,11 @@ const MessageForm = ({ projectId, disabled }: MessageFormProps) => {
           placeholder={disabled ? "A build is already running…" : "Ask CodeGenie to change, add, or refine..."}
           className="block min-h-20 w-full resize-none bg-transparent px-4 pt-4 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
         />
+        {referenceUrl && (
+          <div className="px-3 pb-2">
+            <ReferenceUrlChip url={referenceUrl} onRemove={() => setValue(removeReferenceUrl(value))} />
+          </div>
+        )}
         <div className="flex items-center px-3 pb-3">
           <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground"><WandSparklesIcon className="size-3 text-primary" /> Build instruction</span>
           <button type="submit" disabled={disabled || createMessage.isPending || !value.trim()} aria-label="Submit build instruction" className="ml-auto flex size-8 items-center justify-center rounded-md bg-foreground text-background transition-colors hover:bg-foreground/85 disabled:opacity-40">

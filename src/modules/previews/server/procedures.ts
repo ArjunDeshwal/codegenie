@@ -2,7 +2,11 @@ import { Sandbox } from "@e2b/code-interpreter";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { SANDBOX_TIMEOUT_IN_MS } from "@/constants";
+import {
+  CURRENT_SANDBOX_TEMPLATE,
+  LEGACY_SANDBOX_TEMPLATE,
+  SANDBOX_TIMEOUT_IN_MS,
+} from "@/constants";
 import prisma from "@/lib/prisma";
 import { validateSandboxPreview } from "@/inngest/sandbox-health";
 import type { FileCollection } from "@/types";
@@ -30,7 +34,10 @@ export const previewsRouter = createTRPCRouter({
         throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Preview restart limit reached. Try again later." });
       }
 
-      const sandbox = await Sandbox.create("codegenie-nextjs");
+      const template = fragment.templateVersion === "codegenie-nextjs-v2"
+        ? CURRENT_SANDBOX_TEMPLATE
+        : LEGACY_SANDBOX_TEMPLATE;
+      const sandbox = await Sandbox.create(template);
       try {
         await sandbox.setTimeout(SANDBOX_TIMEOUT_IN_MS);
         for (const [path, content] of Object.entries(fragment.files as FileCollection)) {

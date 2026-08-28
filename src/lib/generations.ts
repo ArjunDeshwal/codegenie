@@ -25,6 +25,33 @@ const CREDIT_PERIOD_MS = CREDIT_PERIOD_DAYS * 24 * 60 * 60 * 1_000;
 
 type Db = Prisma.TransactionClient;
 
+export interface GenerationReferenceInput {
+  seedUrl: string;
+  canonicalOrigin?: string | null;
+  status?: "PENDING" | "READY" | "PARTIAL";
+  pages?: Prisma.InputJsonValue;
+  contentHash?: string | null;
+  pageCount?: number;
+  pageRoutes?: string[];
+}
+
+const referenceCreateData = (reference?: GenerationReferenceInput | null) =>
+  reference
+    ? {
+        websiteInspection: {
+          create: {
+            seedUrl: reference.seedUrl,
+            canonicalOrigin: reference.canonicalOrigin,
+            status: reference.status || "PENDING",
+            pages: reference.pages,
+            contentHash: reference.contentHash,
+            pageCount: reference.pageCount || 0,
+            pageRoutes: reference.pageRoutes || [],
+          },
+        },
+      }
+    : {};
+
 const reserveCredit = async (
   tx: Db,
   userId: string,
@@ -74,6 +101,7 @@ export const createGenerationForProject = async ({
   userId,
   isPro,
   isUnlimited,
+  reference,
 }: {
   projectId: string;
   prompt: string;
@@ -81,6 +109,7 @@ export const createGenerationForProject = async ({
   userId: string;
   isPro: boolean;
   isUnlimited: boolean;
+  reference?: GenerationReferenceInput | null;
 }) => {
   const duplicate = await prisma.generation.findUnique({
     where: { userId_clientRequestId: { userId, clientRequestId } },
@@ -126,6 +155,7 @@ export const createGenerationForProject = async ({
           primaryModel: PRIMARY_MODEL,
           fallbackModel: FALLBACK_MODEL,
           creditReservation: { create: { userId, points } },
+          ...referenceCreateData(reference),
         },
         include: generationInclude,
       });
@@ -154,6 +184,7 @@ export const createProjectWithGeneration = async ({
   userId,
   isPro,
   isUnlimited,
+  reference,
 }: {
   name: string;
   prompt: string;
@@ -161,6 +192,7 @@ export const createProjectWithGeneration = async ({
   userId: string;
   isPro: boolean;
   isUnlimited: boolean;
+  reference?: GenerationReferenceInput | null;
 }) => {
   const duplicate = await prisma.generation.findUnique({
     where: { userId_clientRequestId: { userId, clientRequestId } },
@@ -184,6 +216,7 @@ export const createProjectWithGeneration = async ({
           primaryModel: PRIMARY_MODEL,
           fallbackModel: FALLBACK_MODEL,
           creditReservation: { create: { userId, points } },
+          ...referenceCreateData(reference),
         },
       });
       await tx.project.update({

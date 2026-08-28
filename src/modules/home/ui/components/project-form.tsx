@@ -8,6 +8,8 @@ import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
 import { PROJECT_TEMPLATES } from "@/constants";
+import { ReferenceUrlChip } from "@/components/reference-url-chip";
+import { extractReferenceUrl, removeReferenceUrl } from "@/lib/reference-url";
 import { useTRPC } from "@/trpc/client";
 
 const ProjectForm = () => {
@@ -16,6 +18,9 @@ const ProjectForm = () => {
   const clerk = useClerk();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const inspectionAvailable = process.env.NEXT_PUBLIC_WEBSITE_INSPECTION_ENABLED === "true";
+  let referenceUrl: string | null = null;
+  try { referenceUrl = inspectionAvailable ? extractReferenceUrl(value) : null; } catch { referenceUrl = null; }
   const createProject = useMutation(trpc.projects.create.mutationOptions({
     onSuccess: (data) => {
       queryClient.invalidateQueries(trpc.projects.getMany.queryOptions());
@@ -33,7 +38,7 @@ const ProjectForm = () => {
     event?.preventDefault();
     const prompt = value.trim();
     if (!prompt || createProject.isPending) return;
-    createProject.mutate({ value: prompt, clientRequestId: crypto.randomUUID() });
+    createProject.mutate({ value: prompt, referenceUrl, clientRequestId: crypto.randomUUID() });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); }
@@ -53,6 +58,11 @@ const ProjectForm = () => {
             placeholder="What should CodeGenie bring to life?"
             className="block min-h-36 w-full resize-none bg-transparent px-5 pt-5 text-[15px] leading-6 text-white outline-none placeholder:text-white/38 sm:px-6 sm:pt-6 sm:text-lg"
           />
+          {referenceUrl && (
+            <div className="px-4 pb-2">
+              <ReferenceUrlChip url={referenceUrl} onRemove={() => setValue(removeReferenceUrl(value))} />
+            </div>
+          )}
           <div className="flex items-center gap-3 px-3 pb-3 sm:px-4 sm:pb-4">
             <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-white/60">
               <SparklesIcon className="size-3 text-[#d8ff62]" /> Genie mode

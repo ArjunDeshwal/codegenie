@@ -1,19 +1,18 @@
 # This is a config for E2B sandbox template.
-# You can use template ID (zhfstoz4klstjatapr91) or template name (codegenie-nextjs) to create a sandbox:
+# Version 2 adds isolated Chromium-based reference inspection.
 
 # Python SDK
 # from e2b import Sandbox, AsyncSandbox
-# sandbox = Sandbox("codegenie-nextjs") # Sync sandbox
-# sandbox = await AsyncSandbox.create("codegenie-nextjs") # Async sandbox
+# sandbox = Sandbox("codegenie-nextjs-v2") # Sync sandbox
+# sandbox = await AsyncSandbox.create("codegenie-nextjs-v2") # Async sandbox
 
 # JS SDK
 # import { Sandbox } from 'e2b'
-# const sandbox = await Sandbox.create('codegenie-nextjs')
+# const sandbox = await Sandbox.create('codegenie-nextjs-v2')
 
 team_id = "194ad074-845a-47dc-9f4a-f58cb5842a4d"
 start_cmd = "/compile_page.sh"
 dockerfile = "e2b.Dockerfile"
-template_name = "codegenie-nextjs"
-template_id = "zhfstoz4klstjatapr91"
+template_name = "codegenie-nextjs-v2"
 cpu_count = 2
 memory_mb = 2048

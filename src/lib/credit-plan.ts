@@ -1,4 +1,3 @@
-export const FREE_GENERATION_CREDITS = 5;
+export const FREE_GENERATION_CREDITS = 3;
 export const PRO_GENERATION_CREDITS = 100;
 export const CREDIT_PERIOD_DAYS = 30;
-

@@ -18,6 +18,7 @@ const wait = (durationMs: number) =>
 interface PreviewValidationOptions {
   startAttempts?: number;
   wait?: typeof wait;
+  routes?: string[];
 }
 
 const errorMessage = (error: unknown) =>
@@ -46,10 +47,14 @@ const readIfPresent = async (sandbox: Sandbox, path: string) => {
 
 const probePreview = async (
   sandbox: Sandbox,
+  route = '/',
 ): Promise<Omit<PreviewValidationResult, 'restarted'>> => {
+  const safeRoute = /^\/(?:[a-z0-9_-]+\/?)*$/i.test(route) ? route : '/';
+  const previewUrl = `${PREVIEW_URL.replace(/\/$/, '')}${safeRoute}`;
+  const bodyPath = `${PREVIEW_BODY_PATH}-${safeRoute.replace(/[^a-z0-9]/gi, '_') || 'root'}`;
   try {
     const result = await sandbox.commands.run(
-      `curl --silent --show-error --max-time 15 --output ${PREVIEW_BODY_PATH} --write-out "%{http_code}" ${PREVIEW_URL}`,
+      `curl --silent --show-error --max-time 15 --output ${bodyPath} --write-out "%{http_code}" ${previewUrl}`,
       { timeoutMs: 20_000 },
     );
     const statusCode = Number.parseInt(result.stdout.trim(), 10);
@@ -59,7 +64,7 @@ const probePreview = async (
     }
 
     const responseBody = compactPreviewError(
-      await readIfPresent(sandbox, PREVIEW_BODY_PATH),
+      await readIfPresent(sandbox, bodyPath),
     );
     return {
       ok: false,
@@ -72,6 +77,14 @@ const probePreview = async (
       error: `Preview connection failed: ${errorMessage(error)}`,
     };
   }
+};
+
+const probeRequiredRoutes = async (sandbox: Sandbox, routes: string[]) => {
+  for (const route of Array.from(new Set(routes)).filter((value) => value !== '/').slice(0, 2)) {
+    const result = await probePreview(sandbox, route);
+    if (!result.ok) return { ...result, error: `${route}: ${result.error || `HTTP ${result.statusCode}`}` };
+  }
+  return { ok: true, statusCode: 200 } as const;
 };
 
 const hasRunningNextServer = async (sandbox: Sandbox) => {
@@ -88,7 +101,9 @@ export const validateSandboxPreview = async (
 ): Promise<PreviewValidationResult> => {
   const firstProbe = await probePreview(sandbox);
   if (firstProbe.ok || firstProbe.statusCode) {
-    return { ...firstProbe, restarted: false };
+    if (!firstProbe.ok) return { ...firstProbe, restarted: false };
+    const routesProbe = await probeRequiredRoutes(sandbox, options.routes || ['/']);
+    return { ...routesProbe, restarted: false };
   }
 
   if (await hasRunningNextServer(sandbox)) {
@@ -112,7 +127,9 @@ export const validateSandboxPreview = async (
     await pause(1_000);
     lastProbe = await probePreview(sandbox);
     if (lastProbe.ok || lastProbe.statusCode) {
-      return { ...lastProbe, restarted: true };
+      if (!lastProbe.ok) return { ...lastProbe, restarted: true };
+      const routesProbe = await probeRequiredRoutes(sandbox, options.routes || ['/']);
+      return { ...routesProbe, restarted: true };
     }
   }
 

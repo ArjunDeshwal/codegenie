@@ -41,6 +41,7 @@
     "date-fns": "^4.1.0",
     "fflate": "^0.8.3",
     "inngest": "3.54.0",
+    "ipaddr.js": "1.9.1",
     "lucide-react": "^0.523.0",
     "nanoid": "^5.1.16",
     "next": "^15.5.23",

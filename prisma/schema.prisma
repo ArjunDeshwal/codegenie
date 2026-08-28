@@ -43,9 +43,11 @@ enum GenerationStatus {
 enum GenerationStage {
   QUEUED
   PREPARING
+  INSPECTING
   RESTORING
   GENERATING
   VALIDATING
+  COMPARING
   REPAIRING
   SAVING
 }
@@ -55,6 +57,7 @@ enum FailureCode {
   WORKER_UNAVAILABLE
   SANDBOX_FAILED
   MODEL_FAILED
+  REFERENCE_UNAVAILABLE
   TOOL_INPUT_INVALID
   VALIDATION_FAILED
   PERSISTENCE_FAILED
@@ -74,6 +77,20 @@ enum PreviewStatus {
   READY
   EXPIRED
   FAILED
+}
+
+enum WebsiteInspectionStatus {
+  PENDING
+  READY
+  PARTIAL
+  FAILED
+}
+
+enum WebsiteQualityStatus {
+  PENDING
+  PASSED
+  NEEDS_REFINEMENT
+  UNAVAILABLE
 }
 
 enum MessageRole {
@@ -161,9 +178,36 @@ model Generation {
   updatedAt DateTime @updatedAt
 
   creditReservation CreditReservation?
+  websiteInspection WebsiteInspection?
 
   @@unique([userId, clientRequestId])
   @@index([projectId, createdAt])
+  @@index([status, updatedAt])
+}
+
+model WebsiteInspection {
+  id String @id @default(uuid())
+
+  generationId String @unique
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  seedUrl String
+  canonicalOrigin String?
+  status WebsiteInspectionStatus @default(PENDING)
+  pages Json?
+  contentHash String?
+  pageCount Int @default(0)
+  pageRoutes String[] @default([])
+  failureMessage String?
+
+  qualityStatus WebsiteQualityStatus @default(PENDING)
+  qualityScore Int?
+  qualityReport Json?
+  qualityRepairUsed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([status, updatedAt])
 }
 

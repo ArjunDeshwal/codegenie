@@ -82,3 +82,14 @@ test('returns a compact build error for an unhealthy HTTP response', async () =>
     'Error details',
   );
 });
+
+test('validates every required generated route', async () => {
+  const commands = {
+    run: async (command: string) => ({ stdout: command.includes('/pricing') ? '404' : '200' }),
+    list: async () => [],
+  };
+  const sandbox = { commands, files: { read: async () => '<h1>Not found</h1>' } } as never;
+  const result = await validateSandboxPreview(sandbox, { routes: ['/', '/pricing'] });
+  assert.equal(result.ok, false);
+  assert.match(result.error || '', /\/pricing/);
+});

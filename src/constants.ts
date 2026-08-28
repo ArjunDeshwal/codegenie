@@ -46,3 +46,10 @@ export const PROJECT_TEMPLATES = [
 export const MAX_SEGMENTS = 4;
 
 export const SANDBOX_TIMEOUT_IN_MS = 60_000 * 10 * 3; // 30 mins
+
+export const LEGACY_SANDBOX_TEMPLATE = "codegenie-nextjs";
+export const CURRENT_SANDBOX_TEMPLATE =
+  process.env.E2B_TEMPLATE || "codegenie-nextjs-v2";
+
+export const websiteInspectionEnabled = () =>
+  process.env.WEBSITE_INSPECTION_ENABLED === "true";

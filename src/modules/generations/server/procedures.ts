@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { websiteInspectionEnabled } from "@/constants";
 import { inngest } from "@/inngest/client";
 import {
   createGenerationForProject,
@@ -9,6 +10,7 @@ import {
   reconcileStaleQueuedGenerations,
 } from "@/lib/generations";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma";
 import { hasUnlimitedCredits } from "@/lib/usage";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
@@ -22,7 +24,7 @@ export const generationsRouter = createTRPCRouter({
         userId: ctx.auth.userId,
         projectId: input.projectId,
       });
-      return prisma.generation.findFirst({
+      const generation = await prisma.generation.findFirst({
         where: {
           projectId: input.projectId,
           project: { userId: ctx.auth.userId },
@@ -30,6 +32,25 @@ export const generationsRouter = createTRPCRouter({
         },
         orderBy: { createdAt: "desc" },
       });
+      if (!generation || !websiteInspectionEnabled()) {
+        return generation ? { ...generation, websiteInspection: null } : null;
+      }
+      const websiteInspection = await prisma.websiteInspection.findUnique({
+        where: { generationId: generation.id },
+        select: {
+          seedUrl: true,
+          canonicalOrigin: true,
+          status: true,
+          pageCount: true,
+          pageRoutes: true,
+          failureMessage: true,
+          qualityStatus: true,
+          qualityScore: true,
+          qualityReport: true,
+          qualityRepairUsed: true,
+        },
+      });
+      return { ...generation, websiteInspection };
     }),
   cancel: protectedProcedure.input(generationInput).mutation(async ({ input, ctx }) => {
     const generation = await prisma.generation.findFirst({
@@ -56,6 +77,9 @@ export const generationsRouter = createTRPCRouter({
       if (!["FAILED", "CANCELLED"].includes(previous.status)) {
         throw new TRPCError({ code: "CONFLICT", message: "Only failed or cancelled builds can be retried." });
       }
+      const previousInspection = websiteInspectionEnabled()
+        ? await prisma.websiteInspection.findUnique({ where: { generationId: previous.id } })
+        : null;
       const generation = await createGenerationForProject({
         projectId: previous.projectId,
         prompt: previous.promptMessage.content,
@@ -63,6 +87,17 @@ export const generationsRouter = createTRPCRouter({
         userId: ctx.auth.userId,
         isPro: ctx.auth.has({ plan: "pro" }),
         isUnlimited: await hasUnlimitedCredits(),
+        reference: previousInspection
+          ? {
+              seedUrl: previousInspection.seedUrl,
+              canonicalOrigin: previousInspection.canonicalOrigin,
+              status: previousInspection.status === "PARTIAL" ? "PARTIAL" : previousInspection.status === "READY" ? "READY" : "PENDING",
+              pages: previousInspection.pages as Prisma.InputJsonValue | undefined,
+              contentHash: previousInspection.contentHash,
+              pageCount: previousInspection.pageCount,
+              pageRoutes: previousInspection.pageRoutes,
+            }
+          : null,
       });
       await dispatchGeneration(generation.id, generation.projectId);
       return generation;
