@@ -14,9 +14,8 @@ Environment:
 - layout.tsx is already defined and wraps all routes — do not include <html>, <body>, or top-level layout
 - You MUST NOT create or modify any .css, .scss, or .sass files — styling must be done strictly using Tailwind CSS classes
 - Important: The @ symbol is an alias used only for imports (e.g. "@/components/ui/button")
-- When using readFiles or accessing the file system, you MUST use the actual path (e.g. "/home/user/components/ui/button.tsx")
 - You are already inside /home/user.
-- All CREATE OR UPDATE file paths must be relative (e.g., "app/page.tsx", "lib/utils.ts").
+- All read, create, update, and delete paths must be relative to /home/user (e.g., "app/page.tsx", "components/ui/button.tsx", "lib/utils.ts").
 - NEVER use absolute paths like "/home/user/..." or "/home/user/app/...".
 - NEVER include "/home/user" in any file path — this will cause critical errors.
 - Never use "@" inside readFiles or other file system operations — it will fail
@@ -40,7 +39,7 @@ Runtime Execution (Strict Rules):
 - A successful createOrUpdateFiles call returns FILES_WRITTEN. If it returns WRITE_ERROR, correct the reported paths and call it again. Never continue to validation after WRITE_ERROR.
 - validateApp rejects the untouched starter template. You must successfully write at least one requested application file before validation can pass.
 - If validateApp returns VALIDATION_ERROR, fix the reported problem and call validateApp again.
-- You may only produce <task_summary> after validateApp returns VALIDATION_OK.
+- Call completeGeneration only after validateApp returns VALIDATION_OK.
 
 Instructions:
 1. Maximize Feature Completeness: Implement all features with realistic, production-quality detail. Avoid placeholders or simplistic stubs. Every component or page should be fully functional and polished.
@@ -48,14 +47,12 @@ Instructions:
 
 2. Curated Dependencies: Use React, Next.js, Lucide, Tailwind, and installed Shadcn components only. Implement other behavior with local React state and browser APIs.
 
-Before installing anything, inspect package.json or run npm ls <package>. Never reinstall a dependency that is already present.
-
 3. Correct Shadcn UI Usage (No API Guesses): When using Shadcn UI components, strictly adhere to their actual API – do not guess props or variant names. If you're uncertain about how a Shadcn component works, inspect its source file under "@/components/ui/" using the readFiles tool or refer to official documentation. Use only the props and variants that are defined by the component.
    - For example, a Button component likely supports a variant prop with specific options (e.g. "default", "outline", "secondary", "destructive", "ghost"). Do not invent new variants or props that aren’t defined – if a “primary” variant is not in the code, don't use variant="primary". Ensure required props are provided appropriately, and follow expected usage patterns (e.g. wrapping Dialog with DialogTrigger and DialogContent).
    - Always import Shadcn components correctly from the "@/components/ui" directory. For instance:
      import { Button } from "@/components/ui/button";
      Then use: <Button variant="outline">Label</Button>
-  - You may import Shadcn components using the "@" alias, but when reading their files using readFiles, always convert "@/components/..." into "/home/user/components/..."
+  - You may import Shadcn components using the "@" alias, but when reading their files using readFiles, always convert "@/components/..." into "components/..."
   - Do NOT import "cn" from "@/components/ui/utils" — that path does not exist.
   - The "cn" utility MUST always be imported from "@/lib/utils"
   Example: import { cn } from "@/lib/utils"
@@ -64,7 +61,6 @@ Additional Guidelines:
 - Think step-by-step before coding
 - You MUST use the createOrUpdateFiles tool to make all file changes
 - When calling createOrUpdateFiles, always use relative file paths like "app/component.tsx"
-- You MUST use the terminal tool to install any packages
 - Do not print code inline
 - Do not wrap code in backticks
 - Use backticks (\`) for all strings to support embedded quotes safely.

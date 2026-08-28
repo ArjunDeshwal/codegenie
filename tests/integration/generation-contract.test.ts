@@ -45,3 +45,11 @@ test("unlimited credits are controlled by Clerk private metadata", () => {
   assert.match(usageSource, /privateMetadata/);
   assert.match(accessSource, /codegenieUnlimitedCredits/);
 });
+
+test("readFiles guidance and validation agree on relative workspace paths", () => {
+  const prompt = readFileSync("src/prompt.ts", "utf8");
+  const worker = readFileSync("src/inngest/functions.ts", "utf8");
+  assert.doesNotMatch(prompt, /readFiles[^\n]*\/home\/user/);
+  assert.match(prompt, /components\/ui\/button\.tsx/);
+  assert.match(worker, /READ_ERROR:/);
+});

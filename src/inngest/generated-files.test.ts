@@ -6,6 +6,7 @@ import type { Sandbox } from '@e2b/code-interpreter';
 import {
   generatedFilesInputSchema,
   generatedFilesToolMessage,
+  validateReadPaths,
   writeGeneratedFiles,
 } from './generated-files';
 
@@ -24,6 +25,18 @@ test('rejects an empty generated file batch', () => {
     generatedFilesInputSchema.safeParse({ files: [] }).success,
     false,
   );
+});
+
+test('normalizes legacy workspace-absolute read paths and rejects other absolute paths', () => {
+  assert.deepEqual(
+    validateReadPaths([
+      '/home/user/components/ui/button.tsx',
+      'app/page.tsx',
+    ]),
+    ['components/ui/button.tsx', 'app/page.tsx'],
+  );
+  assert.throws(() => validateReadPaths(['/etc/passwd']));
+  assert.throws(() => validateReadPaths(['@/components/ui/button.tsx']));
 });
 
 test('rejects configuration, unsupported roots, backslashes, and oversized files', () => {

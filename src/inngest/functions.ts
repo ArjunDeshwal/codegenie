@@ -99,7 +99,15 @@ const makeAgent = (sandboxId: string, selectedModel: string) => createAgent<Agen
       description: "Read approved frontend source files.",
       parameters: z.object({ files: z.array(z.string()).min(1).max(20) }),
       handler: async ({ files }, { step, network }) => {
-        const safePaths = validateReadPaths(files);
+        let safePaths: string[];
+        try {
+          safePaths = validateReadPaths(files);
+        } catch (error) {
+          const message = error instanceof z.ZodError
+            ? error.issues.map((issue) => issue.message).join(" ")
+            : "Invalid file path.";
+          return `READ_ERROR: ${message} Use paths relative to /home/user, such as components/ui/button.tsx.`;
+        }
         network.state.data.operationCount += 1;
         return step?.run(`read-files-${network.state.data.operationCount}`, async () => {
           const sandbox = await getSandbox(sandboxId);

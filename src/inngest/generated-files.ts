@@ -49,8 +49,11 @@ export const generatedFilesInputSchema = z.object({
   }
 });
 
+const normalizeWorkspacePath = (path: string) =>
+  path.trim().replace(/^\/home\/user\//, '');
+
 export const validateReadPaths = (paths: string[]) =>
-  paths.map((path) => relativeFilePath.parse(path.trim()));
+  paths.map((path) => relativeFilePath.parse(normalizeWorkspacePath(path)));
 
 export type GeneratedFile = z.infer<
   typeof generatedFilesInputSchema
