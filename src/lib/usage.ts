@@ -1,10 +1,8 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 
 import { hasUnlimitedCreditMetadata } from './credit-access';
+import { FREE_GENERATION_CREDITS, PRO_GENERATION_CREDITS } from './credit-plan';
 import prisma from './prisma';
-
-const FREE_POINTS = 1;
-const PRO_POINTS = 100;
 
 export async function hasUnlimitedCredits() {
   const user = await currentUser();
@@ -35,7 +33,9 @@ export async function getUsageStatus() {
   const now = Date.now();
   const expired = !result?.expire || result.expire.getTime() <= now;
   const consumedPoints = expired ? 0 : result.points;
-  const allowance = has({ plan: 'pro' }) ? PRO_POINTS : FREE_POINTS;
+  const allowance = has({ plan: 'pro' })
+    ? PRO_GENERATION_CREDITS
+    : FREE_GENERATION_CREDITS;
   return {
     remainingPoints: Math.max(0, allowance - consumedPoints),
     msBeforeNext: expired ? 0 : Math.max(0, result.expire!.getTime() - now),

@@ -8,6 +8,11 @@ import {
   Prisma,
 } from "@/generated/prisma";
 import { inngest } from "@/inngest/client";
+import {
+  CREDIT_PERIOD_DAYS,
+  FREE_GENERATION_CREDITS,
+  PRO_GENERATION_CREDITS,
+} from "@/lib/credit-plan";
 import { GENERATION_QUEUE_TIMEOUT_MS } from "@/lib/generation-state";
 import prisma from "@/lib/prisma";
 
@@ -16,9 +21,7 @@ export const PRIMARY_MODEL =
 export const FALLBACK_MODEL =
   process.env.TOKENROUTER_FALLBACK_MODEL || "openai/gpt-5.4-mini";
 
-const FREE_POINTS = 1;
-const PRO_POINTS = 100;
-const CREDIT_PERIOD_MS = 30 * 24 * 60 * 60 * 1_000;
+const CREDIT_PERIOD_MS = CREDIT_PERIOD_DAYS * 24 * 60 * 60 * 1_000;
 
 type Db = Prisma.TransactionClient;
 
@@ -31,7 +34,7 @@ const reserveCredit = async (
   if (process.env.NODE_ENV === "development" || isUnlimited) return 0;
 
   const now = new Date();
-  const allowance = isPro ? PRO_POINTS : FREE_POINTS;
+  const allowance = isPro ? PRO_GENERATION_CREDITS : FREE_GENERATION_CREDITS;
   const existing = await tx.usage.findUnique({ where: { key: userId } });
   const expired = !existing?.expire || existing.expire <= now;
   const used = expired ? 0 : existing.points;

@@ -2,6 +2,11 @@ import { ArrowRightIcon, CheckIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import {
+  CREDIT_PERIOD_DAYS,
+  FREE_GENERATION_CREDITS,
+  PRO_GENERATION_CREDITS,
+} from "@/lib/credit-plan";
 
 const plans = [
   {
@@ -10,7 +15,7 @@ const plans = [
     price: "$0",
     cadence: "forever",
     features: [
-      "1 full app generation every 30 days",
+      `${FREE_GENERATION_CREDITS} full app generations every ${CREDIT_PERIOD_DAYS} days`,
       "Live sandbox preview",
       "Complete generated source code",
     ],
@@ -24,7 +29,7 @@ const plans = [
     price: "Coming soon",
     cadence: "billing is being prepared",
     features: [
-      "100 app generations every 30 days",
+      `${PRO_GENERATION_CREDITS} app generations every ${CREDIT_PERIOD_DAYS} days`,
       "Fast iterative editing",
       "Live previews and complete source",
     ],

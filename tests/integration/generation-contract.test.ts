@@ -46,6 +46,17 @@ test("unlimited credits are controlled by Clerk private metadata", () => {
   assert.match(accessSource, /codegenieUnlimitedCredits/);
 });
 
+test("free generation allowance is shared by billing and pricing UI", () => {
+  const planSource = readFileSync("src/lib/credit-plan.ts", "utf8");
+  const generationSource = readFileSync("src/lib/generations.ts", "utf8");
+  const usageSource = readFileSync("src/lib/usage.ts", "utf8");
+  const pricingSource = readFileSync("src/app/(home)/pricing/page.tsx", "utf8");
+  assert.match(planSource, /FREE_GENERATION_CREDITS\s*=\s*5/);
+  assert.match(generationSource, /FREE_GENERATION_CREDITS/);
+  assert.match(usageSource, /FREE_GENERATION_CREDITS/);
+  assert.match(pricingSource, /FREE_GENERATION_CREDITS/);
+});
+
 test("readFiles guidance and validation agree on relative workspace paths", () => {
   const prompt = readFileSync("src/prompt.ts", "utf8");
   const worker = readFileSync("src/inngest/functions.ts", "utf8");
